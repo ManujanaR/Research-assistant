@@ -9,9 +9,11 @@ from pypdf.errors import PdfReadError
 try:
     from chunker import chunk_pages
     from pdf_parser import parse_pdf
+    from summarizer import summarize_paper
 except ImportError:
     from backend.chunker import chunk_pages
     from backend.pdf_parser import parse_pdf
+    from backend.summarizer import summarize_paper
 
 app = FastAPI(title="Research Assistant API")
 
@@ -41,6 +43,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+latest_summary: dict[str, str] | None = None
+
 
 @app.get("/health")
 def health() -> dict[str, str]:
@@ -49,6 +53,8 @@ def health() -> dict[str, str]:
 
 @app.post("/upload")
 async def upload_pdf(file: UploadFile = File(...)) -> dict[str, Any]:
+    global latest_summary
+
     if not file.filename or not file.filename.lower().endswith(".pdf"):
         raise HTTPException(
             status_code=400, detail="Only PDF files are supported."
@@ -70,8 +76,28 @@ async def upload_pdf(file: UploadFile = File(...)) -> dict[str, Any]:
     chunks = chunk_pages(pages)
     doc_id = str(uuid.uuid4())
 
+    full_text = "\n\n".join(str(p["text"]) for p in pages if p.get("text"))
+    try:
+        summary = summarize_paper(full_text)
+    except (ValueError, RuntimeError) as err:
+        raise HTTPException(
+            status_code=500, detail=f"Summary generation failed: {str(err)}"
+        )
+
+    latest_summary = summary
+
     return {
         "doc_id": doc_id,
         "pages": len(pages),
         "chunks": len(chunks),
+        "summary": summary,
     }
+
+
+@app.get("/summary")
+def get_summary() -> dict[str, str]:
+    if latest_summary is None:
+        raise HTTPException(
+            status_code=404, detail="No paper has been uploaded yet."
+        )
+    return latest_summary
