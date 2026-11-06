@@ -4,15 +4,16 @@ import logging
 from fastapi import HTTPException, UploadFile
 
 from app.core.config import get_settings
-from app.schemas.upload import UploadResponse
 
 logger = logging.getLogger(__name__)
 
 CHUNK_SIZE = 64 * 1024  # 64 KB read buffer
 
 
-async def validate_and_hash_upload(file: UploadFile) -> UploadResponse:
-    """Validate PDF MIME type, file extension, enforce size limit in chunks, and compute SHA-256."""
+async def validate_and_hash_upload(
+    file: UploadFile,
+) -> tuple[str, str, int, bytes]:
+    """Validate PDF MIME type, file extension, enforce size limit, and compute SHA-256."""
     settings = get_settings()
 
     filename = file.filename or ""
@@ -27,6 +28,7 @@ async def validate_and_hash_upload(file: UploadFile) -> UploadResponse:
     max_bytes = settings.max_upload_mb * 1024 * 1024
     total_size = 0
     hasher = hashlib.sha256()
+    chunks_data: list[bytes] = []
 
     while True:
         chunk = await file.read(CHUNK_SIZE)
@@ -39,6 +41,7 @@ async def validate_and_hash_upload(file: UploadFile) -> UploadResponse:
                 detail=f"File exceeds maximum allowed size of {settings.max_upload_mb}MB.",
             )
         hasher.update(chunk)
+        chunks_data.append(chunk)
 
     doc_hash = hasher.hexdigest()
     logger.debug(
@@ -48,8 +51,4 @@ async def validate_and_hash_upload(file: UploadFile) -> UploadResponse:
         doc_hash,
     )
 
-    return UploadResponse(
-        doc_hash=doc_hash,
-        filename=filename,
-        size_bytes=total_size,
-    )
+    return doc_hash, filename, total_size, b"".join(chunks_data)

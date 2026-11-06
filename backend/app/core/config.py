@@ -25,6 +25,7 @@ class Settings(BaseSettings):
     summary_cache_dir: str = Field(
         default=".cache/summaries", alias="SUMMARY_CACHE_DIR"
     )
+    chroma_dir: str = Field(default=".chroma", alias="CHROMA_DIR")
 
     @property
     def cors_origins_list(self) -> list[str]:
