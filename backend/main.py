@@ -107,7 +107,6 @@ async def upload_pdf(file: UploadFile = File(...)) -> dict[str, Any]:
         "file_name": file.filename or "document.pdf",
         "total_pages": len(pages),
     }
-    app.state.current_document = current_document
     stored_pages = pages
 
     stored_sections = {}
@@ -136,15 +135,11 @@ async def upload_pdf(file: UploadFile = File(...)) -> dict[str, Any]:
 
 @app.get("/document")
 def get_document() -> dict[str, Any]:
-    doc = current_document or getattr(app.state, "current_document", None)
-    if not doc:
+    if current_document is None:
         raise HTTPException(
             status_code=404, detail="No paper has been uploaded yet."
         )
-    return {
-        "file_name": doc["file_name"],
-        "total_pages": doc["total_pages"],
-    }
+    return current_document
 
 
 @app.get("/pages/{page_number}")
