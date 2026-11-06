@@ -1,9 +1,12 @@
 import json
 import os
-from typing import Any
+import time
+from typing import Any, Callable
 from google import genai
 from google.genai import types
 from google.genai.errors import APIError
+
+RETRY_DELAYS = (2, 4, 8)
 
 
 def _handle_api_error(err: APIError, model_name: str) -> None:
@@ -13,6 +16,29 @@ def _handle_api_error(err: APIError, model_name: str) -> None:
             f"Model {model_name} is not available. Set GEMINI_MODEL and GEMINI_EMBED_MODEL in backend/.env to a model your API key can use."
         ) from err
     raise RuntimeError(f"Gemini API error: {err_str}") from err
+
+
+def _call_with_retry(fn: Callable[[], Any], model_name: str) -> Any:
+    for delay in (*RETRY_DELAYS, None):
+        try:
+            return fn()
+        except APIError as err:
+            err_str = str(err).upper()
+            code = getattr(err, "code", None)
+            is_busy = (
+                code in (503, 429)
+                or "503" in err_str
+                or "UNAVAILABLE" in err_str
+                or "429" in err_str
+            )
+            if is_busy:
+                if delay is not None:
+                    time.sleep(delay)
+                    continue
+                raise RuntimeError(
+                    "The AI service is busy right now. Please try again in a minute."
+                ) from err
+            _handle_api_error(err, model_name)
 
 
 def call_gemini_json(prompt: str) -> dict[str, Any]:
@@ -26,16 +52,16 @@ def call_gemini_json(prompt: str) -> dict[str, Any]:
 
     client = genai.Client(api_key=api_key)
 
-    try:
-        response = client.models.generate_content(
+    response = _call_with_retry(
+        lambda: client.models.generate_content(
             model=model_name,
             contents=prompt,
             config=types.GenerateContentConfig(
                 response_mime_type="application/json",
             ),
-        )
-    except APIError as err:
-        _handle_api_error(err, model_name)
+        ),
+        model_name,
+    )
 
     raw_text = (response.text or "").strip()
     if raw_text.startswith("```json"):
@@ -69,13 +95,13 @@ def embed_texts(texts: list[str], batch_size: int = 50) -> list[list[float]]:
     all_embeddings: list[list[float]] = []
     for i in range(0, len(texts), batch_size):
         batch = texts[i : i + batch_size]
-        try:
-            res = client.models.embed_content(
+        res = _call_with_retry(
+            lambda: client.models.embed_content(
                 model=embed_model,
                 contents=batch,
-            )
-        except APIError as err:
-            _handle_api_error(err, embed_model)
+            ),
+            embed_model,
+        )
 
         if not res.embeddings:
             raise RuntimeError("Gemini Embed API returned empty embeddings.")
@@ -117,13 +143,13 @@ def answer_question(
         "Answer:"
     )
 
-    try:
-        response = client.models.generate_content(
+    response = _call_with_retry(
+        lambda: client.models.generate_content(
             model=model_name,
             contents=prompt,
-        )
-    except APIError as err:
-        _handle_api_error(err, model_name)
+        ),
+        model_name,
+    )
 
     ans = (response.text or "").strip()
     return ans if ans else "Not found in paper"
