@@ -4,15 +4,20 @@ from typing import Any
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 from pypdf.errors import PdfReadError
 
 try:
     from chunker import chunk_pages
+    from llm import answer_question, embed_texts
     from pdf_parser import parse_pdf
+    from retriever import has_index, search, store_chunks
     from summarizer import summarize_paper
 except ImportError:
     from backend.chunker import chunk_pages
+    from backend.llm import answer_question, embed_texts
     from backend.pdf_parser import parse_pdf
+    from backend.retriever import has_index, search, store_chunks
     from backend.summarizer import summarize_paper
 
 app = FastAPI(title="Research Assistant API")
@@ -44,6 +49,10 @@ app.add_middleware(
 )
 
 latest_summary: dict[str, str] | None = None
+
+
+class AskRequest(BaseModel):
+    question: str = ""
 
 
 @app.get("/health")
@@ -79,9 +88,12 @@ async def upload_pdf(file: UploadFile = File(...)) -> dict[str, Any]:
     full_text = "\n\n".join(str(p["text"]) for p in pages if p.get("text"))
     try:
         summary = summarize_paper(full_text)
+        chunk_texts = [str(c["text"]) for c in chunks]
+        vectors = embed_texts(chunk_texts)
+        store_chunks(chunks, vectors)
     except (ValueError, RuntimeError) as err:
         raise HTTPException(
-            status_code=500, detail=f"Summary generation failed: {str(err)}"
+            status_code=500, detail=f"Processing failed: {str(err)}"
         )
 
     latest_summary = summary
@@ -101,3 +113,52 @@ def get_summary() -> dict[str, str]:
             status_code=404, detail="No paper has been uploaded yet."
         )
     return latest_summary
+
+
+@app.post("/ask")
+def ask(req: AskRequest) -> dict[str, Any]:
+    if not req.question or not req.question.strip():
+        raise HTTPException(
+            status_code=400, detail="Question cannot be empty."
+        )
+
+    if not has_index():
+        raise HTTPException(
+            status_code=404, detail="No paper has been uploaded yet."
+        )
+
+    question_clean = req.question.strip()
+    try:
+        q_vectors = embed_texts([question_clean])
+    except (ValueError, RuntimeError) as err:
+        raise HTTPException(
+            status_code=500, detail=f"Question embedding failed: {str(err)}"
+        )
+
+    if not q_vectors:
+        raise HTTPException(
+            status_code=500, detail="Failed to embed question."
+        )
+
+    top_chunks = search(q_vectors[0], top_k=4)
+
+    try:
+        answer = answer_question(question_clean, top_chunks)
+    except (ValueError, RuntimeError) as err:
+        raise HTTPException(
+            status_code=500, detail=f"Question answering failed: {str(err)}"
+        )
+
+    sources = [
+        {
+            "section": c["section"],
+            "page": c["page"],
+            "snippet": c["text"][:200],
+        }
+        for c in top_chunks
+    ]
+
+    return {
+        "answer": answer,
+        "sources": sources,
+    }
