@@ -22,6 +22,9 @@ class Settings(BaseSettings):
     model_name: str = Field(default="gpt-4o", alias="MODEL_NAME")
     max_upload_mb: int = Field(default=20, gt=0, alias="MAX_UPLOAD_MB")
     cors_origins: str = Field(default="http://localhost:3000", alias="CORS_ORIGINS")
+    summary_cache_dir: str = Field(
+        default=".cache/summaries", alias="SUMMARY_CACHE_DIR"
+    )
 
     @property
     def cors_origins_list(self) -> list[str]:
