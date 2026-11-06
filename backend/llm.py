@@ -6,12 +6,24 @@ from google.genai import types
 from google.genai.errors import APIError
 
 
+def _handle_api_error(err: APIError, model_name: str) -> None:
+    err_str = str(err)
+    if getattr(err, "code", None) == 404 or "404" in err_str or "NOT_FOUND" in err_str:
+        raise RuntimeError(
+            f"Model {model_name} is not available. Set GEMINI_MODEL and GEMINI_EMBED_MODEL in backend/.env to a model your API key can use."
+        ) from err
+    raise RuntimeError(f"Gemini API error: {err_str}") from err
+
+
 def call_gemini_json(prompt: str) -> dict[str, Any]:
     api_key = os.environ.get("GEMINI_API_KEY", "").strip()
     if not api_key:
         raise ValueError("GEMINI_API_KEY is not set.")
 
-    model_name = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash").strip()
+    model_name = os.environ.get("GEMINI_MODEL", "").strip()
+    if not model_name:
+        raise ValueError("GEMINI_MODEL is not set.")
+
     client = genai.Client(api_key=api_key)
 
     try:
@@ -23,7 +35,7 @@ def call_gemini_json(prompt: str) -> dict[str, Any]:
             ),
         )
     except APIError as err:
-        raise RuntimeError(f"Gemini API error: {str(err)}") from err
+        _handle_api_error(err, model_name)
 
     raw_text = (response.text or "").strip()
     if raw_text.startswith("```json"):
@@ -48,9 +60,10 @@ def embed_texts(texts: list[str], batch_size: int = 50) -> list[list[float]]:
     if not api_key:
         raise ValueError("GEMINI_API_KEY is not set.")
 
-    embed_model = os.environ.get(
-        "GEMINI_EMBED_MODEL", "text-embedding-004"
-    ).strip()
+    embed_model = os.environ.get("GEMINI_EMBED_MODEL", "").strip()
+    if not embed_model:
+        raise ValueError("GEMINI_EMBED_MODEL is not set.")
+
     client = genai.Client(api_key=api_key)
 
     all_embeddings: list[list[float]] = []
@@ -62,7 +75,7 @@ def embed_texts(texts: list[str], batch_size: int = 50) -> list[list[float]]:
                 contents=batch,
             )
         except APIError as err:
-            raise RuntimeError(f"Gemini Embed API error: {str(err)}") from err
+            _handle_api_error(err, embed_model)
 
         if not res.embeddings:
             raise RuntimeError("Gemini Embed API returned empty embeddings.")
@@ -83,7 +96,10 @@ def answer_question(
     if not api_key:
         raise ValueError("GEMINI_API_KEY is not set.")
 
-    model_name = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash").strip()
+    model_name = os.environ.get("GEMINI_MODEL", "").strip()
+    if not model_name:
+        raise ValueError("GEMINI_MODEL is not set.")
+
     client = genai.Client(api_key=api_key)
 
     context_str = "\n\n".join(
@@ -107,7 +123,7 @@ def answer_question(
             contents=prompt,
         )
     except APIError as err:
-        raise RuntimeError(f"Gemini API error: {str(err)}") from err
+        _handle_api_error(err, model_name)
 
     ans = (response.text or "").strip()
     return ans if ans else "Not found in paper"
