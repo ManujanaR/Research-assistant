@@ -14,14 +14,13 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    llm_provider: Literal["openai", "anthropic"] = Field(
+    llm_provider: Literal["openai"] = Field(
         default="openai",
         alias="LLM_PROVIDER",
     )
     openai_api_key: str = Field(default="", alias="OPENAI_API_KEY")
-    anthropic_api_key: str = Field(default="", alias="ANTHROPIC_API_KEY")
     model_name: str = Field(default="gpt-4o", alias="MODEL_NAME")
-    max_upload_mb: int = Field(default=20, alias="MAX_UPLOAD_MB")
+    max_upload_mb: int = Field(default=20, gt=0, alias="MAX_UPLOAD_MB")
     cors_origins: str = Field(default="http://localhost:3000", alias="CORS_ORIGINS")
 
     @property
