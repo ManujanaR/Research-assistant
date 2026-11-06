@@ -22,14 +22,17 @@ except ImportError:
 
 app = FastAPI(title="Research Assistant API")
 
-env_path = os.path.join(os.path.dirname(__file__), ".env")
-if os.path.isfile(env_path):
-    with open(env_path, "r", encoding="utf-8") as f:
-        for line in f:
-            stripped = line.strip()
-            if stripped and not stripped.startswith("#") and "=" in stripped:
-                k, v = stripped.split("=", 1)
-                os.environ.setdefault(k.strip(), v.strip())
+for env_path in [
+    os.path.join(os.path.dirname(__file__), ".env"),
+    os.path.join(os.path.dirname(__file__), "..", ".env"),
+]:
+    if os.path.isfile(env_path):
+        with open(env_path, "r", encoding="utf-8") as f:
+            for line in f:
+                stripped = line.strip()
+                if stripped and not stripped.startswith("#") and "=" in stripped:
+                    k, v = stripped.split("=", 1)
+                    os.environ.setdefault(k.strip(), v.strip())
 
 allowed_origins_raw = os.environ.get(
     "ALLOWED_ORIGINS", "http://localhost:5173"
@@ -49,6 +52,9 @@ app.add_middleware(
 )
 
 latest_summary: dict[str, str] | None = None
+latest_filename: str | None = None
+stored_pages: list[dict[str, Any]] = []
+stored_sections: dict[int, str] = {}
 
 
 class AskRequest(BaseModel):
@@ -62,7 +68,7 @@ def health() -> dict[str, str]:
 
 @app.post("/upload")
 async def upload_pdf(file: UploadFile = File(...)) -> dict[str, Any]:
-    global latest_summary
+    global latest_summary, latest_filename, stored_pages, stored_sections
 
     if not file.filename or not file.filename.lower().endswith(".pdf"):
         raise HTTPException(
@@ -97,12 +103,61 @@ async def upload_pdf(file: UploadFile = File(...)) -> dict[str, Any]:
         )
 
     latest_summary = summary
+    latest_filename = file.filename or "document.pdf"
+    stored_pages = pages
+
+    stored_sections = {}
+    for c in chunks:
+        p_num = int(c["page"])
+        if p_num not in stored_sections and c.get("section"):
+            stored_sections[p_num] = str(c["section"])
+
+    curr_sec = "Document"
+    for p in pages:
+        p_num = int(p["page"])
+        if p_num in stored_sections:
+            curr_sec = stored_sections[p_num]
+        else:
+            stored_sections[p_num] = curr_sec
 
     return {
         "doc_id": doc_id,
+        "file_name": latest_filename,
         "pages": len(pages),
+        "total_pages": len(pages),
         "chunks": len(chunks),
         "summary": summary,
+    }
+
+
+@app.get("/document")
+def get_document() -> dict[str, Any]:
+    if not stored_pages:
+        raise HTTPException(
+            status_code=404, detail="No paper has been uploaded yet."
+        )
+    return {
+        "file_name": latest_filename or "document.pdf",
+        "total_pages": len(stored_pages),
+    }
+
+
+@app.get("/pages/{page_number}")
+def get_page(page_number: int) -> dict[str, Any]:
+    if not stored_pages:
+        raise HTTPException(
+            status_code=404, detail="No paper has been uploaded yet."
+        )
+    if page_number < 1 or page_number > len(stored_pages):
+        raise HTTPException(
+            status_code=404, detail=f"Page {page_number} not found."
+        )
+    page_data = stored_pages[page_number - 1]
+    section = stored_sections.get(page_number, "Document")
+    return {
+        "page": page_number,
+        "text": page_data.get("text", ""),
+        "section": section,
     }
 
 
@@ -154,6 +209,7 @@ def ask(req: AskRequest) -> dict[str, Any]:
             "section": c["section"],
             "page": c["page"],
             "snippet": c["text"][:200],
+            "text": c["text"],
         }
         for c in top_chunks
     ]
