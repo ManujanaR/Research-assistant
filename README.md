@@ -9,7 +9,7 @@ A full-stack web application designed for researchers and engineers to upload re
 | Feature / Component | Status | Description |
 | :--- | :--- | :--- |
 | **Backend Base & Health** | **Completed** | FastAPI server running with `/health` endpoint. |
-| **Frontend Base** | **Completed** | Next.js 15.1.7 & React 19.0.0 App Router placeholder. |
+| **Frontend Base** | **Completed** | Next.js 15.5 & React 19.3 App Router placeholder. |
 | **Upload Validation** | *Planned (Commit 3)* | MIME type (415), size limit (413), and SHA-256 on receipt. |
 | **PDF Parser** | *Planned (Commit 4)* | PyMuPDF text extraction, 422 empty scan rejection, page chunking. |
 | **Summary Cache** | *Planned (Commit 5)* | SHA-256 keyed cache (in-memory with disk fallback). |
@@ -21,13 +21,13 @@ A full-stack web application designed for researchers and engineers to upload re
 ## Prerequisites
 
 - **Python**: 3.11+
-- **Node.js**: 20+ (LTS) or 22+ (npm 10+)
+- **Node.js**: 20.9 or later
 - **OpenAI API Key**: Required for live manual testing from Commit 6 onward (`OPENAI_API_KEY`). Automated test suites (`pytest`) always run against mocked clients without needing a live key.
 
 ## Tech Stack
 
 - **Backend**: Python 3.11+, FastAPI (async), PyMuPDF (`fitz`), ChromaDB, OpenAI SDK (`gpt-4o` and `text-embedding-3-small`), Pydantic v2.
-- **Frontend**: Next.js 15.1.7 (App Router), React 19.0.0, TypeScript 5.7, Tailwind CSS 3.4, Lucide React 0.475.
+- **Frontend**: Next.js 15.5 (App Router), React 19.3, TypeScript 5.9, Tailwind CSS 3.4, Lucide React 0.475.
 
 ## Target Repository Layout
 
@@ -54,7 +54,7 @@ A full-stack web application designed for researchers and engineers to upload re
     │   └── page.tsx           # Placeholder landing page (wired in Commit 12)
     ├── components/            # UI components (planned: UploadZone, SummaryView, ChatPanel, SourceCard)
     ├── lib/api.ts             # Typed backend API client (planned: Commit 10)
-    ├── package.json           # Frontend dependencies (Next.js 15.1.7, React 19.0.0)
+    ├── package.json           # Frontend dependencies (Next.js 15.5, React 19.3, lockfile-pinned)
     └── .env.local.example     # Frontend environment template
 ```
 
@@ -77,7 +77,7 @@ Backend health check can be verified at: [http://localhost:8000/health](http://l
 
 ```bash
 cd frontend
-npm install
+npm ci
 cp .env.local.example .env.local
 npm run dev
 ```
