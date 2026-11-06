@@ -52,7 +52,7 @@ app.add_middleware(
 )
 
 latest_summary: dict[str, str] | None = None
-latest_filename: str | None = None
+current_document: dict[str, Any] | None = None
 stored_pages: list[dict[str, Any]] = []
 stored_sections: dict[int, str] = {}
 
@@ -68,7 +68,7 @@ def health() -> dict[str, str]:
 
 @app.post("/upload")
 async def upload_pdf(file: UploadFile = File(...)) -> dict[str, Any]:
-    global latest_summary, latest_filename, stored_pages, stored_sections
+    global latest_summary, current_document, stored_pages, stored_sections
 
     if not file.filename or not file.filename.lower().endswith(".pdf"):
         raise HTTPException(
@@ -103,7 +103,11 @@ async def upload_pdf(file: UploadFile = File(...)) -> dict[str, Any]:
         )
 
     latest_summary = summary
-    latest_filename = file.filename or "document.pdf"
+    current_document = {
+        "file_name": file.filename or "document.pdf",
+        "total_pages": len(pages),
+    }
+    app.state.current_document = current_document
     stored_pages = pages
 
     stored_sections = {}
@@ -122,7 +126,7 @@ async def upload_pdf(file: UploadFile = File(...)) -> dict[str, Any]:
 
     return {
         "doc_id": doc_id,
-        "file_name": latest_filename,
+        "file_name": current_document["file_name"],
         "pages": len(pages),
         "total_pages": len(pages),
         "chunks": len(chunks),
@@ -132,13 +136,14 @@ async def upload_pdf(file: UploadFile = File(...)) -> dict[str, Any]:
 
 @app.get("/document")
 def get_document() -> dict[str, Any]:
-    if not stored_pages:
+    doc = current_document or getattr(app.state, "current_document", None)
+    if not doc:
         raise HTTPException(
             status_code=404, detail="No paper has been uploaded yet."
         )
     return {
-        "file_name": latest_filename or "document.pdf",
-        "total_pages": len(stored_pages),
+        "file_name": doc["file_name"],
+        "total_pages": doc["total_pages"],
     }
 
 
