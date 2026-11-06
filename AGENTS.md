@@ -4,7 +4,7 @@ Instructions for AI coding agents working in this repository. Read this fully be
 
 ## Project overview
 
-Mitra Research Assistant: a full-stack web app where a user uploads one research paper (PDF), receives a structured summary, and asks natural-language questions about it through a chat interface (RAG or full-context Q&A). Due November 10, 2026.
+Research Assistant: a full-stack web app where a user uploads one research paper (PDF), receives a structured summary, and asks natural-language questions about it through a chat interface (RAG or full-context Q&A). Due November 10, 2026.
 
 Core requirements, in priority order:
 1. Single PDF upload per session.
