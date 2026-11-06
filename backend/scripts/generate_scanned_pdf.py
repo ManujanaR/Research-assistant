@@ -4,7 +4,7 @@ import argparse
 import io
 from pathlib import Path
 
-import fitz  # PyMuPDF
+import pymupdf
 from PIL import Image, ImageDraw
 
 
@@ -30,7 +30,7 @@ def generate_scanned_pdf(output_path: Path) -> None:
     img_bytes = img_buffer.getvalue()
 
     # Create PDF and insert image across full page rect
-    doc = fitz.open()
+    doc = pymupdf.open()
     page = doc.new_page(width=width, height=height)
     page.insert_image(page.rect, stream=img_bytes)
 
@@ -56,7 +56,7 @@ def main() -> None:
     print(f"Generated scanned PDF fixture at {args.output}")
 
     # Verification: assert text extraction yields zero characters
-    doc = fitz.open(str(args.output))
+    doc = pymupdf.open(str(args.output))
     extracted = "".join(page.get_text() for page in doc).strip()
     char_count = len(extracted)
     doc.close()

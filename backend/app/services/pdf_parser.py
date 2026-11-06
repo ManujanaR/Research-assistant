@@ -1,7 +1,7 @@
 import logging
 from typing import Any
 
-import fitz  # PyMuPDF
+import pymupdf
 from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
@@ -77,7 +77,7 @@ def parse_pdf(pdf_bytes: bytes) -> ParsedDocument:
         NoExtractableTextError: If the PDF contains no extractable text.
     """
     try:
-        doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+        doc = pymupdf.open(stream=pdf_bytes, filetype="pdf")
     except Exception as exc:
         logger.warning("Failed to open PDF stream: %s", exc)
         raise PdfParseError("The uploaded file could not be parsed as a PDF.") from exc

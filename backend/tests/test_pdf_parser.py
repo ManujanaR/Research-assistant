@@ -1,6 +1,6 @@
 from pathlib import Path
 
-import fitz  # PyMuPDF
+import pymupdf
 import pytest
 
 from app.services.pdf_parser import (
@@ -43,7 +43,7 @@ def test_chunking_with_in_memory_two_page_pdf() -> None:
       - chunks from page 1 never contain page 2's text
       - chunks from page 2 never contain page 1's text
     """
-    doc = fitz.open()
+    doc = pymupdf.open()
     page1 = doc.new_page()
     page1.insert_text(
         (50, 50),
