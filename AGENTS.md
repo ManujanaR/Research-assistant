@@ -76,6 +76,9 @@ Backend (`backend/.env`):
 - `MODEL_NAME` (for example `gpt-4o` or `claude-sonnet-4-5`)
 - `MAX_UPLOAD_MB` (default 20)
 - `CORS_ORIGINS` (default `http://localhost:3000`)
+- `AUTH_SECRET_KEY` (required in production)
+- `AUTH_TOKEN_TTL_MINUTES` (default 60)
+- `DATABASE_URL` (default `sqlite:///./data/app.db`)
 
 Frontend (`frontend/.env.local`):
 - `NEXT_PUBLIC_API_BASE_URL` (default `http://localhost:8000`)
@@ -125,7 +128,8 @@ Q&A:
 - Do not store uploaded PDFs permanently unless a feature needs them. Keep them in a temp directory and clean up.
 - Do not expose API keys to the frontend. All LLM calls happen in the backend.
 - Do not rewrite working code for style alone.
-- Do not add authentication, user accounts, or a database beyond the vector store and cache unless explicitly asked.
+- Authentication is in scope: email and password sign-in with JWT in an HttpOnly cookie. Users are stored in SQLite. Every document, summary, and chat is scoped to the user who uploaded it.
+- Do not store passwords in plain text. Do not log passwords, tokens, or the secret key.
 - Do not invent citations, page numbers, or quotes. If the source location is unknown, omit it.
 
 ## Testing expectations
