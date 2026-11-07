@@ -16,7 +16,10 @@ export function SignOutButton({ email, onSignOut }: SignOutButtonProps) {
 
   useEffect(() => {
     // Locate the top bar actions area in layout.tsx (to the left of theme toggle)
-    const headerActions = document.querySelector("header .flex.items-center.gap-2\\.5");
+    const headerActions =
+      document.querySelector('[data-testid="top-bar-actions"]') ||
+      document.querySelector("header.bg-surface-panel .flex.items-center.gap-2\\.5") ||
+      document.querySelector("header .flex.items-center.gap-2\\.5");
 
     if (headerActions) {
       const themeToggle =
@@ -25,7 +28,7 @@ export function SignOutButton({ email, onSignOut }: SignOutButtonProps) {
         headerActions.lastElementChild;
 
       const container = document.createElement("div");
-      container.className = "flex items-center";
+      container.className = "flex items-center flex-shrink-0 min-w-0";
       if (themeToggle && themeToggle.parentNode === headerActions) {
         headerActions.insertBefore(container, themeToggle);
       } else {
@@ -54,12 +57,12 @@ export function SignOutButton({ email, onSignOut }: SignOutButtonProps) {
   const content = (
     <div
       data-testid="user-session-controls"
-      className="flex items-center gap-2 sm:gap-3 text-xs sm:text-sm mr-2"
+      className="flex items-center gap-1.5 sm:gap-2.5 text-xs sm:text-sm mr-1.5 sm:mr-2 min-w-0 flex-shrink-0"
     >
       <span
         data-testid="user-email-display"
         title={email}
-        className="max-w-[110px] xs:max-w-[150px] sm:max-w-[200px] truncate text-text-secondary font-medium select-none"
+        className="hidden sm:inline max-w-[110px] md:max-w-[160px] lg:max-w-[220px] truncate text-text-secondary font-medium select-none"
       >
         {email}
       </span>
@@ -69,10 +72,13 @@ export function SignOutButton({ email, onSignOut }: SignOutButtonProps) {
         onClick={handleSignOut}
         disabled={isSigningOut}
         aria-label="Sign out"
-        className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-lg border border-border-subtle bg-surface-pill hover:bg-surface-pill-hover text-text-primary transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 disabled:opacity-50"
+        title="Sign out"
+        className="flex items-center justify-center gap-1.5 px-2.5 sm:px-3 py-1.5 text-xs font-medium rounded-xl border border-border-subtle bg-surface-pill hover:bg-surface-pill-hover text-text-primary transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 disabled:opacity-50 min-h-[44px] min-w-[44px] sm:min-w-0 flex-shrink-0"
       >
-        <LogOut className="w-3.5 h-3.5" />
-        <span>{isSigningOut ? "Signing out..." : "Sign out"}</span>
+        <LogOut className="w-4 h-4 flex-shrink-0" />
+        <span className="hidden sm:inline">
+          {isSigningOut ? "Signing out..." : "Sign out"}
+        </span>
       </button>
     </div>
   );

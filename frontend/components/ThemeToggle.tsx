@@ -33,7 +33,7 @@ export function ThemeToggle() {
   // Prevent hydration mismatch
   if (!mounted) {
     return (
-      <div className="w-9 h-9 rounded-xl border border-border-subtle bg-surface-panel" />
+      <div className="w-11 h-11 rounded-xl border border-border-subtle bg-surface-panel min-h-[44px] min-w-[44px] flex-shrink-0" />
     );
   }
 
@@ -41,11 +41,12 @@ export function ThemeToggle() {
     <button
       type="button"
       onClick={toggleTheme}
+      data-testid="theme-toggle"
       aria-label={
         theme === "dark" ? "Switch to light mode" : "Switch to dark mode"
       }
       title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
-      className="w-9 h-9 flex items-center justify-center rounded-xl border border-border-subtle bg-surface-panel text-text-secondary hover:bg-surface-pill-hover hover:text-text-primary transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+      className="w-11 h-11 flex items-center justify-center rounded-xl border border-border-subtle bg-surface-panel text-text-secondary hover:bg-surface-pill-hover hover:text-text-primary transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 min-h-[44px] min-w-[44px] flex-shrink-0"
     >
       {theme === "dark" ? (
         <Sun className="w-4 h-4 text-amber-400" />

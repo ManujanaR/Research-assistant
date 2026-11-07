@@ -15,7 +15,7 @@ export function StudioPanel({ summary, isLoading, error }: StudioPanelProps) {
   return (
     <div
       data-testid="studio-panel"
-      className="flex flex-col h-full p-4 sm:p-5 bg-surface-panel text-text-primary space-y-4 transition-colors duration-150"
+      className="flex flex-col h-full w-full p-4 sm:p-6 lg:p-4 bg-surface-panel text-text-primary space-y-4 transition-colors duration-150"
     >
       <div className="flex items-center justify-between pb-3 border-b border-border-subtle flex-shrink-0">
         <div className="flex items-center gap-2">

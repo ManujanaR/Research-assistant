@@ -196,7 +196,7 @@ export default function Home() {
         filename={uploadResult?.filename}
       />
 
-      {/* Desktop: Three columns (hidden on mobile, flex on lg and above) */}
+      {/* Desktop: Three columns (hidden on phone/tablet, flex on lg and above) */}
       <div
         data-testid="desktop-workspace"
         className="hidden lg:flex flex-1 min-h-0 flex-row overflow-hidden w-full h-full"
@@ -224,22 +224,10 @@ export default function Home() {
           <ChatPanel docHash={uploadResult?.doc_hash ?? ""} />
         </section>
 
-        {/* Draggable Divider Handle to adjust summary panel size on desktop */}
-        <div
-          role="separator"
-          aria-orientation="vertical"
-          aria-label="Resize summary panel"
-          onMouseDown={startResizing}
-          className="w-1.5 hover:w-2 z-10 cursor-col-resize hover:bg-blue-500/40 dark:hover:bg-accent-blue/40 active:bg-blue-600 dark:active:bg-accent-blue transition-colors flex items-center justify-center group flex-shrink-0 select-none"
-        >
-          <div className="w-0.5 h-8 rounded-full bg-border-subtle group-hover:bg-blue-500 dark:group-hover:bg-accent-blue transition-colors" />
-        </div>
-
         {/* Right Column: Structured Summary */}
         <aside
           data-testid="desktop-studio-panel"
-          style={{ width: `${summaryWidth}px` }}
-          className="flex-shrink-0 h-full overflow-y-auto border-l border-border-subtle bg-surface-panel transition-colors"
+          className="w-[360px] flex-shrink-0 h-full overflow-y-auto border-l border-border-subtle bg-surface-panel transition-colors"
         >
           <StudioPanel
             summary={summary}
@@ -249,15 +237,15 @@ export default function Home() {
         </aside>
       </div>
 
-      {/* Mobile: Single visible panel with bottom tab bar (flex on mobile, hidden on lg and above) */}
+      {/* Mobile & Tablet: Single visible panel with bottom tab bar (flex on phone/tablet, hidden on lg and above) */}
       <div
         data-testid="mobile-workspace"
         className="flex lg:hidden flex-1 min-h-0 flex-col overflow-hidden w-full h-full"
       >
         {/* Active Panel View */}
-        <div className="flex-1 min-h-0 overflow-y-auto">
+        <div className="flex-1 min-h-0 overflow-y-auto w-full">
           {activeTab === "source" && (
-            <div className="h-full">
+            <div className="h-full w-full">
               <SourcePanel
                 filename={uploadResult?.filename}
                 pageCount={uploadResult?.page_count}
@@ -269,12 +257,12 @@ export default function Home() {
             </div>
           )}
           {activeTab === "chat" && (
-            <div className="h-full p-2.5 sm:p-3 bg-bg-base">
+            <div className="h-full w-full p-2.5 sm:p-4 bg-bg-base">
               <ChatPanel docHash={uploadResult?.doc_hash ?? ""} />
             </div>
           )}
           {activeTab === "studio" && (
-            <div className="h-full">
+            <div className="h-full w-full">
               <StudioPanel
                 summary={summary}
                 isLoading={isSummaryLoading}
@@ -284,11 +272,11 @@ export default function Home() {
           )}
         </div>
 
-        {/* Mobile Bottom Tab Bar */}
+        {/* Mobile/Tablet Bottom Tab Bar */}
         <nav
           role="tablist"
           aria-label="Workspace tabs"
-          className="h-16 border-t border-border-subtle bg-surface-panel flex items-center justify-around flex-shrink-0 px-2 pb-safe shadow-lg transition-colors"
+          className="w-full h-16 border-t border-border-subtle bg-surface-panel flex items-center justify-around flex-shrink-0 px-2 pb-[env(safe-area-inset-bottom)] shadow-lg transition-colors lg:hidden"
         >
           {MOBILE_TABS.map((tab, index) => {
             const isSelected = activeTab === tab.id;
@@ -307,7 +295,7 @@ export default function Home() {
                 tabIndex={isSelected ? 0 : -1}
                 onClick={() => setActiveTab(tab.id)}
                 onKeyDown={(e) => handleTabKeyDown(e, index)}
-                className={`flex-1 flex flex-col items-center justify-center py-2 px-2 rounded-xl text-xs font-medium transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 min-h-[46px] ${
+                className={`flex-1 flex flex-col items-center justify-center py-2 px-2 rounded-xl text-xs font-medium transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 min-h-[44px] ${
                   isSelected
                     ? "text-blue-600 dark:text-accent-blue bg-surface-pill shadow-sm"
                     : "text-text-muted hover:text-text-primary hover:bg-surface-pill-hover"

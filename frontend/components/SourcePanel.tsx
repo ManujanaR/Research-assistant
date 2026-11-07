@@ -34,7 +34,7 @@ export function SourcePanel({
   return (
     <div
       data-testid="source-panel"
-      className="flex flex-col h-full p-4 sm:p-5 bg-surface-panel text-text-primary space-y-5 transition-colors duration-150 overflow-y-auto"
+      className="flex flex-col h-full w-full p-4 sm:p-6 lg:p-4 bg-surface-panel text-text-primary space-y-5 transition-colors duration-150 overflow-y-auto"
     >
       {hasDocument ? (
         <>
@@ -97,7 +97,7 @@ export function SourcePanel({
             <button
               type="button"
               onClick={onReset}
-              className="w-full inline-flex items-center justify-center gap-2 px-3.5 py-2.5 text-xs font-medium text-text-primary bg-surface-pill hover:bg-surface-pill-hover border border-border-subtle rounded-xl transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 min-h-[42px]"
+              className="w-full inline-flex items-center justify-center gap-2 px-3.5 py-2.5 text-xs font-medium text-text-primary bg-surface-pill hover:bg-surface-pill-hover border border-border-subtle rounded-xl transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 min-h-[44px]"
             >
               <ArrowLeft className="w-3.5 h-3.5" />
               Upload another paper
@@ -129,7 +129,7 @@ export function SourcePanel({
                 ) as HTMLInputElement | null;
                 fileInput?.click();
               }}
-              className="w-full inline-flex items-center justify-center gap-2 px-3.5 py-2.5 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 dark:bg-accent-blue dark:hover:bg-blue-400 dark:text-black rounded-xl transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 shadow-sm min-h-[42px]"
+              className="w-full inline-flex items-center justify-center gap-2 px-3.5 py-2.5 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 dark:bg-accent-blue dark:hover:bg-blue-400 dark:text-black rounded-xl transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 shadow-sm min-h-[44px]"
             >
               <Plus className="w-4 h-4" />
               Add PDF Document
