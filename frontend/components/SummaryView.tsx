@@ -1,7 +1,13 @@
 "use client";
 
-import React from "react";
-import { AlertCircle, FileText } from "lucide-react";
+import React, { useState } from "react";
+import {
+  AlertCircle,
+  FileText,
+  ChevronDown,
+  Copy,
+  Check,
+} from "lucide-react";
 import { SummaryResponse } from "@/lib/api";
 
 export interface SummaryViewProps {
@@ -24,20 +30,63 @@ const SECTIONS: readonly SummarySectionConfig[] = [
 ] as const;
 
 export function SummaryView({ summary, isLoading, error }: SummaryViewProps) {
+  // First section expanded by default; remaining sections start collapsed
+  const [expandedSections, setExpandedSections] = useState<
+    Record<string, boolean>
+  >({
+    title_authors_abstract: true,
+    problem_statement: false,
+    methodology: false,
+    key_results: false,
+    conclusion: false,
+  });
+
+  const [copiedSection, setCopiedSection] = useState<string | null>(null);
+  const [copyErrorSection, setCopyErrorSection] = useState<string | null>(null);
+
+  const toggleSection = (key: string) => {
+    setExpandedSections((prev) => ({
+      ...prev,
+      [key]: !prev[key],
+    }));
+  };
+
+  const handleCopy = async (
+    key: string,
+    text: string,
+    e: React.MouseEvent
+  ) => {
+    e.stopPropagation();
+    try {
+      if (!navigator.clipboard?.writeText) {
+        throw new Error("Clipboard API unavailable");
+      }
+      await navigator.clipboard.writeText(text);
+      setCopiedSection(key);
+      setCopyErrorSection(null);
+      setTimeout(() => {
+        setCopiedSection((current) => (current === key ? null : current));
+      }, 2000);
+    } catch (_err) {
+      setCopyErrorSection(key);
+      setCopiedSection(null);
+      setTimeout(() => {
+        setCopyErrorSection((current) => (current === key ? null : current));
+      }, 2000);
+    }
+  };
+
   if (isLoading) {
     return (
-      <div
-        data-testid="summary-loading"
-        className="space-y-4 animate-pulse"
-      >
+      <div data-testid="summary-loading" className="space-y-3 animate-pulse">
         {[1, 2, 3, 4, 5].map((index) => (
           <div
             key={index}
-            className="p-5 border border-slate-200 rounded-xl bg-slate-50 space-y-3"
+            className="p-4 border border-slate-200 rounded-xl bg-slate-50 space-y-2.5"
           >
-            <div className="h-5 w-1/3 bg-slate-200 rounded" />
-            <div className="h-4 w-full bg-slate-200 rounded" />
-            <div className="h-4 w-5/6 bg-slate-200 rounded" />
+            <div className="h-4 w-1/3 bg-slate-200 rounded" />
+            <div className="h-3.5 w-full bg-slate-200 rounded" />
+            <div className="h-3.5 w-5/6 bg-slate-200 rounded" />
           </div>
         ))}
       </div>
@@ -72,20 +121,90 @@ export function SummaryView({ summary, isLoading, error }: SummaryViewProps) {
   }
 
   return (
-    <div className="space-y-4">
-      {SECTIONS.map((section) => (
-        <article
-          key={section.key}
-          className="p-5 border border-slate-200 rounded-xl bg-white shadow-sm hover:shadow-md transition-shadow"
-        >
-          <h3 className="text-sm font-bold uppercase tracking-wider text-blue-700 mb-2">
-            {section.title}
-          </h3>
-          <div className="text-sm leading-relaxed text-slate-700 whitespace-pre-wrap font-normal">
-            {summary[section.key]}
-          </div>
-        </article>
-      ))}
+    <div className="space-y-3">
+      {SECTIONS.map((section) => {
+        const isExpanded = Boolean(expandedSections[section.key]);
+        const text = summary[section.key];
+        const isCopied = copiedSection === section.key;
+        const hasCopyError = copyErrorSection === section.key;
+
+        return (
+          <article
+            key={section.key}
+            data-testid={`summary-card-${section.key}`}
+            className="border border-slate-200 rounded-xl bg-white shadow-sm overflow-hidden transition-shadow hover:shadow-md"
+          >
+            {/* Collapsible Header */}
+            <div
+              role="button"
+              tabIndex={0}
+              onClick={() => toggleSection(section.key)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  toggleSection(section.key);
+                }
+              }}
+              aria-expanded={isExpanded}
+              aria-controls={`section-body-${section.key}`}
+              className="w-full flex items-center justify-between p-3.5 cursor-pointer select-none bg-white hover:bg-slate-50/80 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+            >
+              <div className="flex items-center gap-2 min-w-0 pr-2">
+                <ChevronDown
+                  className={`w-4 h-4 text-slate-400 flex-shrink-0 transition-transform duration-200 ${
+                    isExpanded ? "rotate-180" : ""
+                  }`}
+                />
+                <h3 className="text-xs font-bold uppercase tracking-wider text-blue-700 truncate">
+                  {section.title}
+                </h3>
+              </div>
+
+              <div className="flex items-center gap-2 flex-shrink-0">
+                {hasCopyError && (
+                  <span
+                    role="status"
+                    className="text-[11px] font-medium text-red-600 bg-red-50 px-2 py-0.5 rounded border border-red-200"
+                  >
+                    Failed to copy
+                  </span>
+                )}
+                <button
+                  type="button"
+                  onClick={(e) => handleCopy(section.key, text, e)}
+                  aria-label={`Copy ${section.title}`}
+                  className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-medium text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 active:bg-slate-300 rounded-md transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                >
+                  {isCopied ? (
+                    <>
+                      <Check className="w-3 h-3 text-emerald-600" />
+                      <span className="text-emerald-700 font-semibold">
+                        Copied
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-3 h-3" />
+                      <span>Copy</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+
+            {/* Collapsible Content */}
+            {isExpanded && (
+              <div
+                id={`section-body-${section.key}`}
+                data-testid={`section-content-${section.key}`}
+                className="px-4 pb-4 pt-1 text-xs sm:text-sm leading-relaxed text-slate-700 whitespace-pre-wrap font-normal border-t border-slate-100/80"
+              >
+                {text}
+              </div>
+            )}
+          </article>
+        );
+      })}
     </div>
   );
 }

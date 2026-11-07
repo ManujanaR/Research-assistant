@@ -1,9 +1,18 @@
 "use client";
 
 import React, { useRef, useState } from "react";
-import { Send, Square, AlertCircle, Bot, User, Loader2 } from "lucide-react";
+import {
+  Send,
+  Square,
+  AlertCircle,
+  Bot,
+  User,
+  Loader2,
+  ChevronDown,
+  ChevronUp,
+  BookOpen,
+} from "lucide-react";
 import { ChatMessage, ChatSource, streamChat } from "@/lib/api";
-import { SourceCard } from "./SourceCard";
 
 export interface ChatPanelProps {
   docHash: string;
@@ -19,6 +28,10 @@ export function ChatPanel({ docHash }: ChatPanelProps) {
   const [input, setInput] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Track expanded source index per message: msgId -> Set of source indices
+  const [expandedSources, setExpandedSources] = useState<
+    Record<string, Record<number, boolean>>
+  >({});
 
   const abortControllerRef = useRef<AbortController | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
@@ -27,6 +40,19 @@ export function ChatPanel({ docHash }: ChatPanelProps) {
     if (typeof messagesEndRef.current?.scrollIntoView === "function") {
       messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
     }
+  };
+
+  const toggleSource = (msgId: string, sourceIdx: number) => {
+    setExpandedSources((prev) => {
+      const msgState = prev[msgId] || {};
+      return {
+        ...prev,
+        [msgId]: {
+          ...msgState,
+          [sourceIdx]: !msgState[sourceIdx],
+        },
+      };
+    });
   };
 
   const handleStop = () => {
@@ -131,9 +157,12 @@ export function ChatPanel({ docHash }: ChatPanelProps) {
   };
 
   return (
-    <div className="flex flex-col h-full border border-slate-200 rounded-xl bg-white shadow-sm overflow-hidden">
+    <div
+      data-testid="chat-panel"
+      className="flex flex-col h-full border border-slate-200 rounded-xl bg-white shadow-sm overflow-hidden"
+    >
       {/* Header */}
-      <div className="px-5 py-3.5 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+      <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between bg-slate-50/50 flex-shrink-0">
         <h2 className="text-sm font-semibold text-slate-800 flex items-center gap-2">
           <Bot className="w-4 h-4 text-blue-600" />
           Paper Q&A Chat
@@ -147,7 +176,7 @@ export function ChatPanel({ docHash }: ChatPanelProps) {
       </div>
 
       {/* Message List */}
-      <div className="flex-1 p-5 overflow-y-auto space-y-4">
+      <div className="flex-1 p-4 sm:p-5 overflow-y-auto space-y-4 min-h-0">
         {messages.length === 0 ? (
           <div
             data-testid="chat-empty-state"
@@ -163,48 +192,150 @@ export function ChatPanel({ docHash }: ChatPanelProps) {
             </p>
           </div>
         ) : (
-          messages.map((msg) => (
-            <div
-              key={msg.id}
-              className={`flex flex-col gap-2 ${
-                msg.role === "user" ? "items-end" : "items-start"
-              }`}
-            >
+          messages.map((msg) => {
+            const hasSources =
+              msg.role === "assistant" &&
+              Boolean(msg.sources && msg.sources.length > 0);
+            const msgSources = msg.sources || [];
+            const msgExpState = expandedSources[msg.id] || {};
+
+            return (
               <div
-                className={`flex gap-2.5 max-w-[85%] ${
-                  msg.role === "user"
-                    ? "bg-blue-600 text-white rounded-2xl rounded-tr-sm px-4 py-2.5 shadow-sm"
-                    : "bg-slate-100 text-slate-800 rounded-2xl rounded-tl-sm px-4 py-2.5"
+                key={msg.id}
+                className={`flex flex-col gap-2 ${
+                  msg.role === "user" ? "items-end" : "items-start"
                 }`}
               >
-                {msg.role === "assistant" && (
-                  <Bot className="w-4 h-4 text-slate-500 mt-0.5 flex-shrink-0" />
-                )}
-                {msg.role === "user" && (
-                  <User className="w-4 h-4 text-blue-200 mt-0.5 flex-shrink-0" />
-                )}
-                <div className="text-sm whitespace-pre-wrap leading-relaxed">
-                  {msg.content ||
-                    (isStreaming && msg.role === "assistant" ? "..." : "")}
-                </div>
-              </div>
-
-              {/* Render attached source cards */}
-              {msg.sources && msg.sources.length > 0 && (
+                {/* Message Bubble */}
                 <div
-                  data-testid="message-sources"
-                  className="w-full max-w-[85%] mt-1 space-y-2 pl-4"
+                  className={`flex gap-2.5 max-w-[85%] ${
+                    msg.role === "user"
+                      ? "bg-blue-600 text-white rounded-2xl rounded-tr-sm px-4 py-2.5 shadow-sm"
+                      : "bg-slate-100 text-slate-800 rounded-2xl rounded-tl-sm px-4 py-2.5"
+                  }`}
                 >
-                  <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
-                    Citations ({msg.sources.length})
-                  </p>
-                  {msg.sources.map((source, index) => (
-                    <SourceCard key={index} source={source} />
-                  ))}
+                  {msg.role === "assistant" && (
+                    <Bot className="w-4 h-4 text-slate-500 mt-0.5 flex-shrink-0" />
+                  )}
+                  {msg.role === "user" && (
+                    <User className="w-4 h-4 text-blue-200 mt-0.5 flex-shrink-0" />
+                  )}
+                  <div className="text-sm whitespace-pre-wrap leading-relaxed inline">
+                    <span>
+                      {msg.content ||
+                        (isStreaming && msg.role === "assistant" ? "..." : "")}
+                    </span>
+
+                    {/* Numbered Inline Citation Markers */}
+                    {hasSources && (
+                      <span className="inline-flex flex-wrap items-center gap-1 ml-1.5 align-baseline">
+                        {msgSources.map((_, idx) => {
+                          const num = idx + 1;
+                          const isExpanded = Boolean(msgExpState[idx]);
+                          return (
+                            <button
+                              key={idx}
+                              type="button"
+                              onClick={() => toggleSource(msg.id, idx)}
+                              aria-label={`Citation [${num}]`}
+                              aria-expanded={isExpanded}
+                              className={`inline-flex items-center justify-center px-1.5 py-0.2 text-[11px] font-bold rounded transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-blue-500 ${
+                                isExpanded
+                                  ? "bg-blue-600 text-white"
+                                  : "bg-blue-100 text-blue-800 hover:bg-blue-200"
+                              }`}
+                            >
+                              [{num}]
+                            </button>
+                          );
+                        })}
+                      </span>
+                    )}
+                  </div>
                 </div>
-              )}
-            </div>
-          ))
+
+                {/* Numbered Sources List beneath the message */}
+                {hasSources && (
+                  <div
+                    data-testid="message-sources"
+                    className="w-full max-w-[85%] mt-1 space-y-2 pl-4"
+                  >
+                    <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
+                      Citations ({msgSources.length})
+                    </p>
+                    {msgSources.map((source, idx) => {
+                      const num = idx + 1;
+                      const isExpanded = Boolean(msgExpState[idx]);
+                      return (
+                        <div
+                          key={idx}
+                          data-testid={`source-card-${num}`}
+                          className="border border-slate-200 rounded-lg p-2.5 bg-white text-xs shadow-sm"
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => toggleSource(msg.id, idx)}
+                                aria-expanded={isExpanded}
+                                aria-label={`Toggle source [${num}]`}
+                                className="font-bold text-blue-700 hover:text-blue-900 focus:outline-none focus-visible:ring-1 focus-visible:ring-blue-500 rounded"
+                              >
+                                [{num}]
+                              </button>
+                              <BookOpen className="w-3.5 h-3.5 text-slate-400" />
+                              <span className="font-medium text-slate-700">
+                                Source
+                              </span>
+                              {source.page_number !== null && (
+                                <span
+                                  data-testid="page-badge"
+                                  className="px-1.5 py-0.5 text-[10px] font-semibold bg-blue-100 text-blue-800 rounded"
+                                >
+                                  Page {source.page_number}
+                                </span>
+                              )}
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={() => toggleSource(msg.id, idx)}
+                              aria-expanded={isExpanded}
+                              className="flex items-center gap-1 text-slate-500 hover:text-slate-800 font-medium transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-blue-500 rounded"
+                            >
+                              <span>
+                                {isExpanded ? "Hide passage" : "Show passage"}
+                              </span>
+                              {isExpanded ? (
+                                <ChevronUp className="w-3.5 h-3.5" />
+                              ) : (
+                                <ChevronDown className="w-3.5 h-3.5" />
+                              )}
+                            </button>
+                          </div>
+
+                          {/* Expanded Passage */}
+                          {isExpanded && (
+                            <div
+                              data-testid="source-passage"
+                              className="mt-2.5 pl-3 py-1.5 border-l-2 border-blue-500 bg-slate-50/70 text-slate-700 whitespace-pre-wrap leading-relaxed text-xs rounded-r"
+                            >
+                              <div className="text-[10px] font-semibold text-slate-500 mb-1">
+                                {source.page_number !== null
+                                  ? `Passage from Page ${source.page_number}:`
+                                  : "Passage:"}
+                              </div>
+                              {source.snippet}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })
         )}
 
         {/* In-list Error state */}
@@ -228,7 +359,7 @@ export function ChatPanel({ docHash }: ChatPanelProps) {
       {/* Input area */}
       <form
         onSubmit={handleSubmit}
-        className="p-4 border-t border-slate-100 bg-slate-50/50"
+        className="p-3 sm:p-4 border-t border-slate-100 bg-slate-50/50 flex-shrink-0"
       >
         <div className="relative flex items-end gap-2">
           <textarea
@@ -256,7 +387,7 @@ export function ChatPanel({ docHash }: ChatPanelProps) {
               type="button"
               onClick={handleStop}
               aria-label="Stop generation"
-              className="p-3 bg-red-600 text-white rounded-xl hover:bg-red-700 transition-colors focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-1 flex items-center justify-center"
+              className="p-3 bg-red-600 text-white rounded-xl hover:bg-red-700 transition-colors focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-1 flex items-center justify-center flex-shrink-0"
             >
               <Square className="w-4 h-4 fill-current" />
             </button>
@@ -265,7 +396,7 @@ export function ChatPanel({ docHash }: ChatPanelProps) {
               type="submit"
               disabled={isStreaming || !input.trim()}
               aria-label="Send message"
-              className="p-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 disabled:opacity-50 disabled:hover:bg-blue-600 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 flex items-center justify-center"
+              className="p-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 disabled:opacity-50 disabled:hover:bg-blue-600 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 flex items-center justify-center flex-shrink-0"
             >
               <Send className="w-4 h-4" />
             </button>

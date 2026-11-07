@@ -1,21 +1,53 @@
 import React from "react";
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, fireEvent, waitFor, cleanup } from "@testing-library/react";
+import {
+  render,
+  screen,
+  fireEvent,
+  waitFor,
+  cleanup,
+} from "@testing-library/react";
 
 import { UploadZone } from "./UploadZone";
 import { SummaryView } from "./SummaryView";
 import { SourceCard } from "./SourceCard";
+import { SourcePanel } from "./SourcePanel";
+import { StudioPanel } from "./StudioPanel";
 import { ChatPanel } from "./ChatPanel";
-import { ApiError, uploadPdf, streamChat, SummaryResponse } from "@/lib/api";
+import Home from "@/app/page";
+import {
+  ApiError,
+  uploadPdf,
+  getSummary,
+  streamChat,
+  SummaryResponse,
+} from "@/lib/api";
 
 vi.mock("@/lib/api", async () => {
   const actual = await vi.importActual<typeof import("@/lib/api")>("@/lib/api");
   return {
     ...actual,
     uploadPdf: vi.fn(),
+    getSummary: vi.fn(),
     streamChat: vi.fn(),
   };
 });
+
+function mockMatchMedia(matches: boolean) {
+  Object.defineProperty(window, "matchMedia", {
+    writable: true,
+    value: vi.fn().mockImplementation((query: string) => ({
+      matches,
+      media: query,
+      onchange: null,
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    })),
+  });
+}
 
 describe("Frontend UI Components", () => {
   beforeEach(() => {
@@ -42,7 +74,9 @@ describe("Frontend UI Components", () => {
       render(<UploadZone onUploaded={onUploaded} />);
 
       const file = new File(["not a pdf"], "notes.txt", { type: "text/plain" });
-      const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+      const input = document.querySelector(
+        'input[type="file"]'
+      ) as HTMLInputElement;
 
       fireEvent.change(input, { target: { files: [file] } });
 
@@ -78,7 +112,9 @@ describe("Frontend UI Components", () => {
       const file = new File(["dummy pdf bytes"], "paper.pdf", {
         type: "application/pdf",
       });
-      const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+      const input = document.querySelector(
+        'input[type="file"]'
+      ) as HTMLInputElement;
 
       fireEvent.change(input, { target: { files: [file] } });
 
@@ -101,7 +137,9 @@ describe("Frontend UI Components", () => {
       const file = new File(["large pdf content"], "paper.pdf", {
         type: "application/pdf",
       });
-      const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+      const input = document.querySelector(
+        'input[type="file"]'
+      ) as HTMLInputElement;
 
       fireEvent.change(input, { target: { files: [file] } });
 
@@ -113,17 +151,21 @@ describe("Frontend UI Components", () => {
   });
 
   describe("SummaryView", () => {
+    const mockSummary: SummaryResponse = {
+      title_authors_abstract: "Attention Is All You Need by Vaswani et al.",
+      problem_statement: "Recurrence creates computational bottlenecks.",
+      methodology: "Transformer architecture with multi-head self-attention.",
+      key_results: "BLEU score of 28.4 on WMT 2014 English-to-German.",
+      conclusion: "Self-attention can replace recurrence entirely.",
+    };
+
     it("renders the loading skeleton when isLoading is true", () => {
-      render(
-        <SummaryView summary={null} isLoading={true} error={null} />
-      );
+      render(<SummaryView summary={null} isLoading={true} error={null} />);
       expect(screen.getByTestId("summary-loading")).toBeDefined();
     });
 
     it("renders the empty message when summary is null, not loading, and no error", () => {
-      render(
-        <SummaryView summary={null} isLoading={false} error={null} />
-      );
+      render(<SummaryView summary={null} isLoading={false} error={null} />);
       expect(screen.getByText("No summary available")).toBeDefined();
       expect(
         screen.getByText(/upload a research paper to generate a structured/i)
@@ -139,15 +181,7 @@ describe("Frontend UI Components", () => {
       expect(screen.getByText(errorMessage)).toBeDefined();
     });
 
-    it("renders all five sections in order when populated", () => {
-      const mockSummary: SummaryResponse = {
-        title_authors_abstract: "Attention Is All You Need by Vaswani et al.",
-        problem_statement: "Recurrence creates computational bottlenecks.",
-        methodology: "Transformer architecture with multi-head self-attention.",
-        key_results: "BLEU score of 28.4 on WMT 2014 English-to-German.",
-        conclusion: "Self-attention can replace recurrence entirely.",
-      };
-
+    it("renders all five sections with only the first section expanded by default", () => {
       render(
         <SummaryView summary={mockSummary} isLoading={false} error={null} />
       );
@@ -167,12 +201,73 @@ describe("Frontend UI Components", () => {
         expect(h.textContent?.trim()).toBe(expectedHeadings[index]);
       });
 
+      // Section 1 is expanded by default
       expect(
         screen.getByText("Attention Is All You Need by Vaswani et al.")
       ).toBeDefined();
+
+      // Sections 2-5 are collapsed by default
+      expect(
+        screen.queryByText("Self-attention can replace recurrence entirely.")
+      ).toBeNull();
+      expect(
+        screen.queryByText("Recurrence creates computational bottlenecks.")
+      ).toBeNull();
+
+      // Clicking Conclusion section expands it
+      const conclusionCard = screen.getByTestId("summary-card-conclusion");
+      const toggle = conclusionCard.querySelector('[role="button"]')!;
+      fireEvent.click(toggle);
+
       expect(
         screen.getByText("Self-attention can replace recurrence entirely.")
       ).toBeDefined();
+    });
+
+    it("section copy button copies plain text and shows Copied confirmation", async () => {
+      const writeTextMock = vi.fn().mockResolvedValue(undefined);
+      Object.assign(navigator, {
+        clipboard: { writeText: writeTextMock },
+      });
+
+      render(
+        <SummaryView summary={mockSummary} isLoading={false} error={null} />
+      );
+
+      const copyBtn = screen.getByRole("button", {
+        name: "Copy Title, Authors & Abstract",
+      });
+      fireEvent.click(copyBtn);
+
+      expect(writeTextMock).toHaveBeenCalledWith(
+        mockSummary.title_authors_abstract
+      );
+
+      await waitFor(() => {
+        expect(screen.getByText("Copied")).toBeDefined();
+      });
+    });
+
+    it("clipboard failure displays a visible error message", async () => {
+      const writeTextMock = vi
+        .fn()
+        .mockRejectedValue(new Error("Clipboard permission denied"));
+      Object.assign(navigator, {
+        clipboard: { writeText: writeTextMock },
+      });
+
+      render(
+        <SummaryView summary={mockSummary} isLoading={false} error={null} />
+      );
+
+      const copyBtn = screen.getByRole("button", {
+        name: "Copy Title, Authors & Abstract",
+      });
+      fireEvent.click(copyBtn);
+
+      await waitFor(() => {
+        expect(screen.getByText("Failed to copy")).toBeDefined();
+      });
     });
   });
 
@@ -241,6 +336,39 @@ describe("Frontend UI Components", () => {
     });
   });
 
+  describe("SourcePanel and StudioPanel", () => {
+    it("SourcePanel renders truncated filename, tooltip, page count, chunk count, ready badge, and reset button", () => {
+      const onReset = vi.fn();
+      render(
+        <SourcePanel
+          filename="very-long-academic-paper-title-2026.pdf"
+          pageCount={14}
+          chunkCount={42}
+          onReset={onReset}
+          isReady={true}
+        />
+      );
+
+      const titleEl = screen.getByTitle("very-long-academic-paper-title-2026.pdf");
+      expect(titleEl).toBeDefined();
+      expect(screen.getByText(/14 pages/i)).toBeDefined();
+      expect(screen.getByText(/42 indexed/i)).toBeDefined();
+      expect(screen.getByTestId("ready-badge")).toBeDefined();
+
+      const resetBtn = screen.getByRole("button", {
+        name: /upload another paper/i,
+      });
+      fireEvent.click(resetBtn);
+      expect(onReset).toHaveBeenCalledTimes(1);
+    });
+
+    it("StudioPanel renders summary header and child SummaryView", () => {
+      render(<StudioPanel summary={null} isLoading={false} error={null} />);
+      expect(screen.getByText("Studio")).toBeDefined();
+      expect(screen.getByText("No summary available")).toBeDefined();
+    });
+  });
+
   describe("ChatPanel", () => {
     const docHash = "1234567890abcdef".repeat(4);
 
@@ -264,10 +392,14 @@ describe("Frontend UI Components", () => {
 
       render(<ChatPanel docHash={docHash} />);
 
-      const textarea = screen.getByPlaceholderText(/ask a question about this paper/i);
+      const textarea = screen.getByPlaceholderText(
+        /ask a question about this paper/i
+      );
       const sendButton = screen.getByRole("button", { name: /send message/i });
 
-      fireEvent.change(textarea, { target: { value: "What is the architecture?" } });
+      fireEvent.change(textarea, {
+        target: { value: "What is the architecture?" },
+      });
       fireEvent.click(sendButton);
 
       await waitFor(() => {
@@ -282,10 +414,82 @@ describe("Frontend UI Components", () => {
       expect(streamChat).toHaveBeenCalledTimes(1);
     });
 
+    it("a chat answer with two sources shows markers [1] and [2], and clicking [2] shows its passage with its page number", async () => {
+      vi.mocked(streamChat).mockImplementation(async (_params, handlers) => {
+        handlers.onToken("Multi-head attention improves capacity.");
+        handlers.onSources([
+          { page_number: 3, snippet: "Self-attention operates across representation subspaces." },
+          { page_number: 5, snippet: "Multi-head attention yields significant gains on translation." },
+        ]);
+        handlers.onDone();
+      });
+
+      render(<ChatPanel docHash={docHash} />);
+
+      const textarea = screen.getByPlaceholderText(
+        /ask a question about this paper/i
+      );
+      const sendButton = screen.getByRole("button", { name: /send message/i });
+
+      fireEvent.change(textarea, { target: { value: "Explain multi-head attention" } });
+      fireEvent.click(sendButton);
+
+      await waitFor(() => {
+        expect(screen.getByRole("button", { name: "Citation [1]" })).toBeDefined();
+        expect(screen.getByRole("button", { name: "Citation [2]" })).toBeDefined();
+      });
+
+      // Source 2 passage is initially not expanded
+      expect(
+        screen.queryByText(/Multi-head attention yields significant gains on translation./)
+      ).toBeNull();
+
+      // Click citation marker [2]
+      const marker2 = screen.getByRole("button", { name: "Citation [2]" });
+      fireEvent.click(marker2);
+
+      // Verifies passage appears with its page number
+      await waitFor(() => {
+        expect(screen.getByText("Passage from Page 5:")).toBeDefined();
+        expect(
+          screen.getByText("Multi-head attention yields significant gains on translation.")
+        ).toBeDefined();
+      });
+    });
+
+    it("a message with no sources shows no markers", async () => {
+      vi.mocked(streamChat).mockImplementation(async (_params, handlers) => {
+        handlers.onToken("I cannot answer this from the text.");
+        handlers.onSources([]);
+        handlers.onDone();
+      });
+
+      render(<ChatPanel docHash={docHash} />);
+
+      const textarea = screen.getByPlaceholderText(
+        /ask a question about this paper/i
+      );
+      const sendButton = screen.getByRole("button", { name: /send message/i });
+
+      fireEvent.change(textarea, { target: { value: "Unrelated question" } });
+      fireEvent.click(sendButton);
+
+      await waitFor(() => {
+        expect(
+          screen.getByText("I cannot answer this from the text.")
+        ).toBeDefined();
+      });
+
+      expect(screen.queryByRole("button", { name: /Citation \[/i })).toBeNull();
+      expect(screen.queryByTestId("message-sources")).toBeNull();
+    });
+
     it("whitespace-only input does not call streamChat", () => {
       render(<ChatPanel docHash={docHash} />);
 
-      const textarea = screen.getByPlaceholderText(/ask a question about this paper/i);
+      const textarea = screen.getByPlaceholderText(
+        /ask a question about this paper/i
+      );
       const sendButton = screen.getByRole("button", { name: /send message/i });
 
       fireEvent.change(textarea, { target: { value: "   \n\t  " } });
@@ -297,7 +501,9 @@ describe("Frontend UI Components", () => {
     it("input over 2000 characters is rejected", () => {
       render(<ChatPanel docHash={docHash} />);
 
-      const textarea = screen.getByPlaceholderText(/ask a question about this paper/i);
+      const textarea = screen.getByPlaceholderText(
+        /ask a question about this paper/i
+      );
       const sendButton = screen.getByRole("button", { name: /send message/i });
 
       const longMessage = "a".repeat(2001);
@@ -333,7 +539,6 @@ describe("Frontend UI Components", () => {
         ).toBeDefined();
       });
 
-      // Retained input for user retry
       expect(textarea.value).toBe(originalQuestion);
     });
 
@@ -354,7 +559,9 @@ describe("Frontend UI Components", () => {
 
       render(<ChatPanel docHash={docHash} />);
 
-      const textarea = screen.getByPlaceholderText(/ask a question about this paper/i);
+      const textarea = screen.getByPlaceholderText(
+        /ask a question about this paper/i
+      );
       const sendButton = screen.getByRole("button", { name: /send message/i });
 
       fireEvent.change(textarea, { target: { value: "Explain the dataset" } });
@@ -369,31 +576,123 @@ describe("Frontend UI Components", () => {
       fireEvent.click(stopButton);
 
       expect(passedSignal?.aborted).toBe(true);
-      // Partial assistant message stays in document
       expect(screen.getByText("Starting generated text...")).toBeDefined();
     });
+  });
 
-    it("an empty sources event renders no citation block in chat", async () => {
-      vi.mocked(streamChat).mockImplementation(async (_params, handlers) => {
-        handlers.onToken("The paper does not discuss this topic.");
-        handlers.onSources([]);
-        handlers.onDone();
+  describe("Workspace Responsive Layout (Home)", () => {
+    const mockUploadResult = {
+      doc_hash: "b".repeat(64),
+      filename: "test-transformer.pdf",
+      size_bytes: 4096,
+      page_count: 8,
+      chunk_count: 24,
+    };
+
+    const mockSummary: SummaryResponse = {
+      title_authors_abstract: "Attention Mechanism Title",
+      problem_statement: "Attention Problem",
+      methodology: "Attention Methodology",
+      key_results: "Attention Key Results",
+      conclusion: "Attention Conclusion",
+    };
+
+    beforeEach(() => {
+      vi.mocked(uploadPdf).mockResolvedValue(mockUploadResult);
+      vi.mocked(getSummary).mockResolvedValue(mockSummary);
+    });
+
+    it("desktop layout renders all three panels when window.matchMedia reports a wide viewport", async () => {
+      mockMatchMedia(true);
+
+      render(<Home />);
+
+      // Perform upload to transition to workspace
+      const file = new File(["pdf content"], "test-transformer.pdf", {
+        type: "application/pdf",
       });
-
-      render(<ChatPanel docHash={docHash} />);
-
-      const textarea = screen.getByPlaceholderText(/ask a question about this paper/i);
-      const sendButton = screen.getByRole("button", { name: /send message/i });
-
-      fireEvent.change(textarea, { target: { value: "Off-topic query" } });
-      fireEvent.click(sendButton);
+      const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+      fireEvent.change(input, { target: { files: [file] } });
 
       await waitFor(() => {
-        expect(
-          screen.getByText("The paper does not discuss this topic.")
-        ).toBeDefined();
-        expect(screen.queryByTestId("message-sources")).toBeNull();
+        expect(screen.getByTestId("desktop-workspace")).toBeDefined();
+        expect(screen.getByTestId("desktop-source-panel")).toBeDefined();
+        expect(screen.getByTestId("desktop-chat-panel")).toBeDefined();
+        expect(screen.getByTestId("desktop-studio-panel")).toBeDefined();
       });
+
+      // Mobile tab bar should not be in the document
+      expect(screen.queryByRole("tablist")).toBeNull();
+    });
+
+    it("mobile tab bar renders three tabs, and selecting Studio shows the summary", async () => {
+      mockMatchMedia(false);
+
+      render(<Home />);
+
+      const file = new File(["pdf content"], "test-transformer.pdf", {
+        type: "application/pdf",
+      });
+      const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+      fireEvent.change(input, { target: { files: [file] } });
+
+      await waitFor(() => {
+        expect(screen.getByTestId("mobile-workspace")).toBeDefined();
+      });
+
+      const tabList = screen.getByRole("tablist", { name: "Workspace tabs" });
+      expect(tabList).toBeDefined();
+
+      const tabs = screen.getAllByRole("tab");
+      expect(tabs).toHaveLength(3);
+      expect(tabs[0].textContent).toContain("Source");
+      expect(tabs[1].textContent).toContain("Chat");
+      expect(tabs[2].textContent).toContain("Studio");
+
+      // Chat is default tab after upload
+      expect(tabs[1].getAttribute("aria-selected")).toBe("true");
+
+      // Select Studio tab
+      fireEvent.click(tabs[2]);
+      expect(tabs[2].getAttribute("aria-selected")).toBe("true");
+
+      // Summary should now be visible in Studio view
+      await waitFor(() => {
+        expect(screen.getByTestId("studio-panel")).toBeDefined();
+        expect(screen.getByText("Attention Mechanism Title")).toBeDefined();
+      });
+    });
+
+    it("mobile tabs respond to keyboard arrow navigation", async () => {
+      mockMatchMedia(false);
+
+      render(<Home />);
+
+      const file = new File(["pdf content"], "test-transformer.pdf", {
+        type: "application/pdf",
+      });
+      const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+      fireEvent.change(input, { target: { files: [file] } });
+
+      await waitFor(() => {
+        expect(screen.getByTestId("mobile-workspace")).toBeDefined();
+      });
+
+      const tabs = screen.getAllByRole("tab");
+      // Initial tab is chat (index 1)
+      expect(tabs[1].getAttribute("aria-selected")).toBe("true");
+
+      // Press ArrowRight -> moves to Studio (index 2)
+      fireEvent.keyDown(tabs[1], { key: "ArrowRight" });
+      expect(tabs[2].getAttribute("aria-selected")).toBe("true");
+
+      // Press ArrowRight again -> wraps around to Source (index 0)
+      fireEvent.keyDown(tabs[2], { key: "ArrowRight" });
+      expect(tabs[0].getAttribute("aria-selected")).toBe("true");
+
+      // Press ArrowLeft -> wraps back to Studio (index 2)
+      fireEvent.keyDown(tabs[0], { key: "ArrowLeft" });
+      expect(tabs[2].getAttribute("aria-selected")).toBe("true");
     });
   });
 });

@@ -13,10 +13,10 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en">
-      <body className="min-h-screen bg-slate-50 text-slate-900 antialiased flex flex-col">
-        <header className="border-b border-slate-200 bg-white sticky top-0 z-10 shadow-sm">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+    <html lang="en" className="h-full">
+      <body className="h-full bg-slate-50 text-slate-900 antialiased flex flex-col overflow-hidden">
+        <header className="h-16 border-b border-slate-200 bg-white flex-shrink-0 z-10 shadow-sm">
+          <div className="w-full px-4 sm:px-6 lg:px-8 h-full flex items-center justify-between">
             <div className="flex items-center gap-2">
               <span className="text-xl font-bold tracking-tight text-blue-600">
                 Mitra
@@ -31,7 +31,7 @@ export default function RootLayout({
           </div>
         </header>
 
-        <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
+        <main className="flex-1 min-h-0 w-full overflow-hidden flex flex-col">
           {children}
         </main>
       </body>

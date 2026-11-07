@@ -7,10 +7,17 @@ import { ChatSource } from "@/lib/api";
 export interface SourceCardProps {
   source?: ChatSource;
   sources?: ChatSource[];
+  index?: number;
+  initiallyExpanded?: boolean;
 }
 
-export function SourceCard({ source, sources }: SourceCardProps) {
-  const [isExpanded, setIsExpanded] = useState(false);
+export function SourceCard({
+  source,
+  sources,
+  index,
+  initiallyExpanded = false,
+}: SourceCardProps) {
+  const [isExpanded, setIsExpanded] = useState(initiallyExpanded);
 
   // If a sources list is passed directly, do not render when empty
   if (sources !== undefined) {
@@ -20,7 +27,7 @@ export function SourceCard({ source, sources }: SourceCardProps) {
     return (
       <div data-testid="citation-block" className="space-y-2">
         {sources.map((s, idx) => (
-          <SourceCard key={idx} source={s} />
+          <SourceCard key={idx} source={s} index={idx} />
         ))}
       </div>
     );
@@ -30,12 +37,15 @@ export function SourceCard({ source, sources }: SourceCardProps) {
     return null;
   }
 
+  const citationLabel =
+    index !== undefined ? `Source [${index + 1}]` : "Source Excerpt";
+
   return (
     <div className="border border-slate-200 rounded-lg p-3 bg-white text-xs shadow-sm">
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <BookOpen className="w-3.5 h-3.5 text-slate-400" />
-          <span className="font-medium text-slate-700">Source Excerpt</span>
+          <span className="font-medium text-slate-700">{citationLabel}</span>
           {source.page_number !== null && (
             <span
               data-testid="page-badge"
@@ -50,7 +60,7 @@ export function SourceCard({ source, sources }: SourceCardProps) {
           type="button"
           onClick={() => setIsExpanded((prev) => !prev)}
           aria-expanded={isExpanded}
-          className="flex items-center gap-1 text-slate-500 hover:text-slate-800 font-medium transition-colors"
+          className="flex items-center gap-1 text-slate-500 hover:text-slate-800 font-medium transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-blue-500 rounded"
         >
           <span>{isExpanded ? "Hide snippet" : "Show snippet"}</span>
           {isExpanded ? (
@@ -64,7 +74,7 @@ export function SourceCard({ source, sources }: SourceCardProps) {
       {isExpanded && (
         <div
           data-testid="source-snippet"
-          className="mt-2.5 pt-2.5 border-t border-slate-100 text-slate-600 whitespace-pre-wrap leading-relaxed font-mono text-[11px]"
+          className="mt-2.5 pl-3 py-1.5 border-l-2 border-blue-500 bg-slate-50/70 text-slate-700 whitespace-pre-wrap leading-relaxed text-xs rounded-r"
         >
           {source.snippet}
         </div>
