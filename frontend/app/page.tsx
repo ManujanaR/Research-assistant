@@ -2,7 +2,6 @@
 
 import React, { useEffect, useRef, useState } from "react";
 import { BookOpen, MessageSquare, Sparkles } from "lucide-react";
-import { UploadZone } from "@/components/UploadZone";
 import { SourcePanel } from "@/components/SourcePanel";
 import { StudioPanel } from "@/components/StudioPanel";
 import { ChatPanel } from "@/components/ChatPanel";
@@ -33,8 +32,8 @@ export default function Home() {
   const [isSummaryLoading, setIsSummaryLoading] = useState(false);
   const [summaryError, setSummaryError] = useState<string | null>(null);
 
-  // Mobile navigation state
-  const [activeTab, setActiveTab] = useState<MobileTab>("chat");
+  // Mobile navigation state: default to 'source' before upload, switch to 'chat' after upload
+  const [activeTab, setActiveTab] = useState<MobileTab>("source");
   const tabRefs = useRef<(HTMLButtonElement | null)[]>([]);
 
   // Desktop vs Mobile viewport detection via window.matchMedia
@@ -86,7 +85,7 @@ export default function Home() {
     setSummary(null);
     setSummaryError(null);
     setIsSummaryLoading(false);
-    setActiveTab("chat");
+    setActiveTab("source");
   };
 
   const handleTabKeyDown = (
@@ -108,23 +107,7 @@ export default function Home() {
 
   return (
     <div className="w-full h-full flex flex-col flex-1 min-h-0 overflow-hidden bg-bg-base text-text-primary transition-colors duration-150">
-      {!uploadResult ? (
-        <div className="flex-1 overflow-y-auto px-4 py-8 sm:py-12">
-          <div className="max-w-2xl mx-auto">
-            <div className="text-center mb-8">
-              <h1 className="text-3xl font-extrabold tracking-tight text-text-primary sm:text-4xl">
-                Research Paper Assistant
-              </h1>
-              <p className="mt-3 text-sm sm:text-base text-text-secondary max-w-lg mx-auto">
-                Upload an academic paper to generate an instant 5-part structured
-                summary and chat with answers strictly grounded in the document.
-              </p>
-            </div>
-
-            <UploadZone onUploaded={handleUploaded} />
-          </div>
-        </div>
-      ) : isDesktop ? (
+      {isDesktop ? (
         /* Desktop: Three columns (Source: 280px, Chat: flex-1, Studio: 360px) */
         <div
           data-testid="desktop-workspace"
@@ -136,11 +119,12 @@ export default function Home() {
             className="w-[280px] flex-shrink-0 h-full overflow-y-auto border-r border-border-subtle bg-surface-panel transition-colors"
           >
             <SourcePanel
-              filename={uploadResult.filename}
-              pageCount={uploadResult.page_count}
-              chunkCount={uploadResult.chunk_count}
+              filename={uploadResult?.filename}
+              pageCount={uploadResult?.page_count}
+              chunkCount={uploadResult?.chunk_count}
               onReset={handleReset}
               isReady={Boolean(summary && !isSummaryLoading)}
+              onUploaded={handleUploaded}
             />
           </aside>
 
@@ -149,7 +133,7 @@ export default function Home() {
             data-testid="desktop-chat-panel"
             className="flex-1 min-w-0 h-full overflow-hidden p-3 sm:p-4 bg-bg-base transition-colors"
           >
-            <ChatPanel docHash={uploadResult.doc_hash} />
+            <ChatPanel docHash={uploadResult?.doc_hash ?? ""} />
           </section>
 
           {/* Right Column: Structured Summary Studio */}
@@ -175,17 +159,18 @@ export default function Home() {
             {activeTab === "source" && (
               <div className="h-full">
                 <SourcePanel
-                  filename={uploadResult.filename}
-                  pageCount={uploadResult.page_count}
-                  chunkCount={uploadResult.chunk_count}
+                  filename={uploadResult?.filename}
+                  pageCount={uploadResult?.page_count}
+                  chunkCount={uploadResult?.chunk_count}
                   onReset={handleReset}
                   isReady={Boolean(summary && !isSummaryLoading)}
+                  onUploaded={handleUploaded}
                 />
               </div>
             )}
             {activeTab === "chat" && (
               <div className="h-full p-2.5 sm:p-3 bg-bg-base">
-                <ChatPanel docHash={uploadResult.doc_hash} />
+                <ChatPanel docHash={uploadResult?.doc_hash ?? ""} />
               </div>
             )}
             {activeTab === "studio" && (

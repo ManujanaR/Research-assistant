@@ -66,7 +66,7 @@ export function ChatPanel({ docHash }: ChatPanelProps) {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (isStreaming) return;
+    if (isStreaming || !docHash) return;
 
     const trimmed = input.trim();
     if (!trimmed) return;
@@ -380,9 +380,11 @@ export function ChatPanel({ docHash }: ChatPanelProps) {
             placeholder={
               isStreaming
                 ? "Waiting for response..."
+                : !docHash
+                ? "Upload a paper to start asking questions..."
                 : "Ask a question about this paper (Enter to send, Shift+Enter for new line)..."
             }
-            disabled={isStreaming}
+            disabled={isStreaming || !docHash}
             maxLength={2000}
             rows={2}
             className="flex-1 resize-none rounded-2xl border border-border-subtle p-3 text-base sm:text-sm focus:border-accent-blue focus:outline-none focus:ring-1 focus:ring-accent-blue disabled:bg-surface-elevated disabled:text-text-muted placeholder:text-text-muted bg-surface-panel text-text-primary shadow-sm"
@@ -400,7 +402,7 @@ export function ChatPanel({ docHash }: ChatPanelProps) {
           ) : (
             <button
               type="submit"
-              disabled={isStreaming || !input.trim()}
+              disabled={isStreaming || !docHash || !input.trim()}
               aria-label="Send message"
               className="p-3 bg-blue-600 hover:bg-blue-700 dark:bg-accent-blue dark:hover:bg-blue-400 dark:text-black disabled:opacity-50 disabled:hover:bg-blue-600 dark:disabled:hover:bg-accent-blue text-white rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 flex items-center justify-center flex-shrink-0 min-h-[44px] min-w-[44px] shadow-sm"
             >
