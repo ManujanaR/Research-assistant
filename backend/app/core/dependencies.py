@@ -1,8 +1,9 @@
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any
 
 import chromadb
 from chromadb.api import ClientAPI
+from fastapi import Depends
 
 from app.core.config import get_settings
 from app.services.cache import SummaryCache
@@ -19,15 +20,21 @@ def get_summary_cache() -> SummaryCache:
     return SummaryCache(cache_dir=Path(settings.summary_cache_dir))
 
 
-def get_paper_text_store() -> PaperTextStore:
-    """Return the process-wide in-memory PaperTextStore singleton."""
-    return _paper_text_store
-
-
 def get_chroma_client() -> ClientAPI:
     """Return a ChromaDB persistent client pointing to settings.chroma_dir."""
     settings = get_settings()
     return chromadb.PersistentClient(path=settings.chroma_dir)
+
+
+def get_paper_text_store(
+    chroma_client: Annotated[ClientAPI | None, Depends(get_chroma_client)] = None,
+) -> PaperTextStore:
+    """Return the process-wide in-memory PaperTextStore singleton with Chroma fallback."""
+    if chroma_client is not None:
+        _paper_text_store.chroma_client = chroma_client
+    elif _paper_text_store.chroma_client is None:
+        _paper_text_store.chroma_client = get_chroma_client()
+    return _paper_text_store
 
 
 def get_embedding_function() -> EmbedFn:

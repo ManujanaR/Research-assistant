@@ -66,6 +66,41 @@ def collection_exists(doc_hash: str, client: ClientAPI | None = None) -> bool:
         return False
 
 
+def rebuild_text_from_chroma(
+    doc_hash: str, client: ClientAPI | None = None
+) -> str | None:
+    """Rebuild full document text from stored Chroma chunks sorted by index."""
+    _validate_hash(doc_hash)
+
+    if client is None:
+        settings = get_settings()
+        client = chromadb.PersistentClient(path=settings.chroma_dir)
+
+    collection_name = get_chroma_collection_name(doc_hash)
+    try:
+        collection = client.get_collection(name=collection_name)
+    except (chromadb.errors.ChromaError, ValueError, KeyError):
+        return None
+
+    if collection.count() == 0:
+        return None
+
+    stored = collection.get(include=["documents"])
+    ids: list[str] = stored.get("ids", [])
+    docs: list[str] = stored.get("documents", [])
+    if not ids or not docs:
+        return None
+
+    def _get_sort_index(item_id: str) -> int:
+        parts = item_id.rsplit(":", 1)
+        if len(parts) == 2 and parts[1].isdigit():
+            return int(parts[1])
+        return 0
+
+    pairs = sorted(zip(ids, docs, strict=False), key=lambda p: _get_sort_index(p[0]))
+    return "\n\n".join(doc for _, doc in pairs if doc is not None)
+
+
 def extract_snippet(chunk_text: str, max_chars: int = 200) -> str:
     """Extract a snippet of at most max_chars that is an exact substring of chunk_text.
 
