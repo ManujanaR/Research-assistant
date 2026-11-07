@@ -5,14 +5,19 @@ import openai
 from chromadb.api import ClientAPI
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
+from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.core.dependencies import (
     get_chat_llm_client,
     get_chroma_client,
+    get_current_user,
     get_embedding_function,
 )
+from app.db.session import get_db
+from app.models.user import User
 from app.schemas.chat import ChatRequest
+from app.services.ownership_service import is_owner
 from app.services.qa import (
     EmbeddingDimensionMismatchError,
     EmbedFn,
@@ -31,11 +36,20 @@ router = APIRouter(prefix="/api", tags=["chat"])
 @router.post("/chat")
 async def chat(
     request: ChatRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
     chroma_client: Annotated[ClientAPI, Depends(get_chroma_client)],
     embed_fn: Annotated[EmbedFn, Depends(get_embedding_function)],
     llm_client: Annotated[Any, Depends(get_chat_llm_client)],
 ) -> StreamingResponse:
     """Stream grounded chat answers with SSE and source citations for an uploaded paper."""
+    # Step 1: Ownership check runs first, before collection check or retrieval
+    if not is_owner(request.doc_hash, current_user.id, db=db):
+        raise HTTPException(
+            status_code=404,
+            detail="Document not found. Upload the PDF first.",
+        )
+
     if not collection_exists(request.doc_hash, client=chroma_client):
         raise HTTPException(
             status_code=404,

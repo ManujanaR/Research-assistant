@@ -3,15 +3,20 @@ from typing import Annotated, Any
 
 import openai
 from fastapi import APIRouter, Depends, HTTPException, Request
+from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.core.dependencies import (
+    get_current_user,
     get_llm_client,
     get_paper_text_store,
     get_summary_cache,
 )
+from app.db.session import get_db
+from app.models.user import User
 from app.schemas.summary import SummaryRequest, SummarySchema
 from app.services.cache import SummaryCache
+from app.services.ownership_service import is_owner
 from app.services.summarizer import (
     SUMMARY_GENERATION_FAILED_MESSAGE,
     SummaryGenerationError,
@@ -28,11 +33,20 @@ router = APIRouter(prefix="/api", tags=["summary"])
 async def get_or_generate_summary(
     request: SummaryRequest,
     raw_request: Request,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
     cache: Annotated[SummaryCache, Depends(get_summary_cache)],
     text_store: Annotated[PaperTextStore, Depends(get_paper_text_store)],
 ) -> SummarySchema:
     """Retrieve cached summary or generate a new structured summary from stored paper text."""
     doc_hash = request.doc_hash
+
+    # Step 1: Ownership check runs first, before cache, text, or index access
+    if not is_owner(doc_hash, current_user.id, db=db):
+        raise HTTPException(
+            status_code=404,
+            detail="Document not found. Upload the PDF first.",
+        )
 
     # Step 2: Cache check (hit returns immediately without touching LLM client)
     cached = cache.get(doc_hash)
