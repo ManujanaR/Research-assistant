@@ -3,7 +3,7 @@ import "./globals.css";
 import { ThemeToggle } from "@/components/ThemeToggle";
 
 export const metadata: Metadata = {
-  title: "Mitra Research Assistant",
+  title: "Research Assistant",
   description:
     "AI-powered structured summarization and grounded Q&A for research papers.",
 };
@@ -35,10 +35,10 @@ export default function RootLayout({
           <div className="w-full px-4 sm:px-6 lg:px-8 h-full flex items-center justify-between">
             <div className="flex items-center gap-2 sm:gap-2.5">
               <span className="text-xl font-bold tracking-tight text-blue-600 dark:text-accent-blue">
-                Mitra
+                Research
               </span>
               <span className="text-xl font-medium text-slate-700 dark:text-text-primary">
-                Research Assistant
+                Assistant
               </span>
             </div>
             <div className="flex items-center gap-2.5 sm:gap-3">
