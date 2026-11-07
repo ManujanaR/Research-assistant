@@ -82,11 +82,11 @@ export function SummaryView({ summary, isLoading, error }: SummaryViewProps) {
         {[1, 2, 3, 4, 5].map((index) => (
           <div
             key={index}
-            className="p-4 border border-slate-200 dark:border-slate-800 rounded-xl bg-slate-50 dark:bg-slate-900/60 space-y-2.5"
+            className="p-4 border border-border-subtle rounded-2xl bg-surface-elevated space-y-2.5"
           >
-            <div className="h-4 w-1/3 bg-slate-200 dark:bg-slate-800 rounded" />
-            <div className="h-3.5 w-full bg-slate-200 dark:bg-slate-800 rounded" />
-            <div className="h-3.5 w-5/6 bg-slate-200 dark:bg-slate-800 rounded" />
+            <div className="h-4 w-1/3 bg-surface-pill rounded" />
+            <div className="h-3.5 w-full bg-surface-pill rounded" />
+            <div className="h-3.5 w-5/6 bg-surface-pill rounded" />
           </div>
         ))}
       </div>
@@ -97,7 +97,7 @@ export function SummaryView({ summary, isLoading, error }: SummaryViewProps) {
     return (
       <div
         role="alert"
-        className="flex items-start gap-3 p-4 text-sm text-red-700 dark:text-red-300 bg-red-50 dark:bg-red-950/50 border border-red-200 dark:border-red-900/70 rounded-xl"
+        className="flex items-start gap-3 p-4 text-sm text-red-700 dark:text-red-300 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900/60 rounded-2xl"
       >
         <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5 text-red-600 dark:text-red-400" />
         <div className="space-y-1">
@@ -112,10 +112,10 @@ export function SummaryView({ summary, isLoading, error }: SummaryViewProps) {
 
   if (!summary) {
     return (
-      <div className="flex flex-col items-center justify-center p-8 border border-dashed border-slate-200 dark:border-slate-800 rounded-xl text-center text-slate-500 dark:text-slate-400 bg-slate-50/50 dark:bg-slate-900/50">
-        <FileText className="w-8 h-8 text-slate-400 dark:text-slate-600 mb-2" />
+      <div className="flex flex-col items-center justify-center p-8 border border-dashed border-border-subtle rounded-2xl text-center text-text-secondary bg-surface-elevated">
+        <FileText className="w-8 h-8 text-text-muted mb-2" />
         <p className="text-sm font-medium">No summary available</p>
-        <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">
+        <p className="text-xs text-text-muted mt-1">
           Upload a research paper to generate a structured five-part summary.
         </p>
       </div>
@@ -134,7 +134,7 @@ export function SummaryView({ summary, isLoading, error }: SummaryViewProps) {
           <article
             key={section.key}
             data-testid={`summary-card-${section.key}`}
-            className="border border-slate-200 dark:border-slate-800 rounded-xl bg-white dark:bg-slate-900 shadow-sm overflow-hidden transition-all hover:shadow-md hover:border-slate-300 dark:hover:border-slate-700"
+            className="border border-border-subtle rounded-2xl bg-surface-panel shadow-sm overflow-hidden transition-all hover:border-slate-300 dark:hover:border-slate-700"
           >
             {/* Collapsible Header */}
             <div
@@ -149,15 +149,15 @@ export function SummaryView({ summary, isLoading, error }: SummaryViewProps) {
               }}
               aria-expanded={isExpanded}
               aria-controls={`section-body-${section.key}`}
-              className="w-full flex items-center justify-between p-3.5 cursor-pointer select-none bg-white dark:bg-slate-900 hover:bg-slate-50/80 dark:hover:bg-slate-850 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 min-h-[44px]"
+              className="w-full flex items-center justify-between p-3.5 cursor-pointer select-none bg-surface-panel hover:bg-surface-elevated transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 min-h-[44px]"
             >
               <div className="flex items-center gap-2 min-w-0 pr-2">
                 <ChevronDown
-                  className={`w-4 h-4 text-slate-400 dark:text-slate-500 flex-shrink-0 transition-transform duration-200 ${
+                  className={`w-4 h-4 text-text-muted flex-shrink-0 transition-transform duration-200 ${
                     isExpanded ? "rotate-180" : ""
                   }`}
                 />
-                <h3 className="text-xs font-bold uppercase tracking-wider text-blue-700 dark:text-blue-400 truncate">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-blue-600 dark:text-accent-blue truncate">
                   {section.title}
                 </h3>
               </div>
@@ -175,7 +175,7 @@ export function SummaryView({ summary, isLoading, error }: SummaryViewProps) {
                   type="button"
                   onClick={(e) => handleCopy(section.key, text, e)}
                   aria-label={`Copy ${section.title}`}
-                  className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-medium text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-slate-100 bg-slate-100 hover:bg-slate-200 active:bg-slate-300 dark:bg-slate-800 dark:hover:bg-slate-700 dark:active:bg-slate-600 rounded-md transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 min-h-[32px]"
+                  className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-medium text-text-primary bg-surface-pill hover:bg-surface-pill-hover border border-border-subtle rounded-lg transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 min-h-[32px]"
                 >
                   {isCopied ? (
                     <>
@@ -186,7 +186,7 @@ export function SummaryView({ summary, isLoading, error }: SummaryViewProps) {
                     </>
                   ) : (
                     <>
-                      <Copy className="w-3 h-3" />
+                      <Copy className="w-3 h-3 text-text-secondary" />
                       <span>Copy</span>
                     </>
                   )}
@@ -199,7 +199,7 @@ export function SummaryView({ summary, isLoading, error }: SummaryViewProps) {
               <div
                 id={`section-body-${section.key}`}
                 data-testid={`section-content-${section.key}`}
-                className="px-4 pb-4 pt-1 text-xs sm:text-sm leading-relaxed text-slate-700 dark:text-slate-300 whitespace-pre-wrap font-normal border-t border-slate-100 dark:border-slate-800"
+                className="px-4 pb-4 pt-2 text-xs sm:text-sm leading-relaxed text-text-secondary whitespace-pre-wrap font-normal border-t border-border-subtle"
               >
                 {text}
               </div>
