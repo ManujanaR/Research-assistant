@@ -53,3 +53,8 @@ def get_llm_client() -> Any:
     from openai import AsyncOpenAI
 
     return AsyncOpenAI(api_key=settings.openai_api_key)
+
+
+def get_chat_llm_client() -> Any:
+    """Build the OpenAI async client for chat from OPENAI_API_KEY only when called."""
+    return get_llm_client()
