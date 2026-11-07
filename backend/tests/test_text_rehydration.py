@@ -3,7 +3,6 @@ from pathlib import Path
 
 import chromadb
 import pytest
-from fastapi.testclient import TestClient
 
 from app.core.config import get_settings
 from app.core.dependencies import (
@@ -17,9 +16,8 @@ from app.main import app
 from app.services.cache import SummaryCache
 from app.services.qa import index_document, rebuild_text_from_chroma
 from app.services.summary_service import InMemoryPaperTextStore
+from tests.conftest import AuthenticatedTestClient
 from tests.test_summarizer import VALID_SUMMARY_DICT, FakeOpenAIClient
-
-client = TestClient(app)
 
 
 class SimpleEmbedder:
@@ -95,7 +93,9 @@ def test_invalid_hash_raises_value_error(tmp_path: Path) -> None:
 
 @pytest.mark.asyncio
 async def test_summary_endpoint_rehydration_after_restart(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    auth_client: AuthenticatedTestClient,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Simulate restart with empty in-memory store and summary cache miss; endpoint rehydrates text from Chroma."""
     monkeypatch.setenv("OPENAI_API_KEY", "sk-mock-key")
@@ -117,6 +117,7 @@ async def test_summary_endpoint_rehydration_after_restart(
         embed_fn=embedder,
         client=chroma_client,
     )
+    auth_client.record_ownership(doc_hash)
 
     # Empty summary cache
     cache_dir = tmp_path / "summary_cache"
@@ -133,7 +134,7 @@ async def test_summary_endpoint_rehydration_after_restart(
     app.dependency_overrides[get_llm_client] = lambda: fake_llm
 
     try:
-        response = client.post("/api/summary", json={"doc_hash": doc_hash})
+        response = auth_client.post("/api/summary", json={"doc_hash": doc_hash})
         assert response.status_code == 200
         data = response.json()
         assert (
@@ -143,4 +144,8 @@ async def test_summary_endpoint_rehydration_after_restart(
         # Confirm that restart_store now has the text in memory
         assert doc_hash in restart_store._store
     finally:
-        app.dependency_overrides.clear()
+        app.dependency_overrides.pop(get_chroma_client, None)
+        app.dependency_overrides.pop(get_embedding_function, None)
+        app.dependency_overrides.pop(get_summary_cache, None)
+        app.dependency_overrides.pop(get_paper_text_store, None)
+        app.dependency_overrides.pop(get_llm_client, None)

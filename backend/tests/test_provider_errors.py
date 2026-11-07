@@ -12,9 +12,8 @@ import httpx
 import openai
 import pymupdf
 import pytest
-from fastapi.testclient import TestClient
 
-from app.core.config import BACKEND_DIR, Settings
+from app.core.config import BACKEND_DIR, Settings, get_settings
 from app.core.dependencies import (
     get_chroma_client,
     get_embedding_function,
@@ -31,8 +30,7 @@ from app.services.qa import (
     stream_chat_response,
 )
 from app.services.summary_service import InMemoryPaperTextStore
-
-client = TestClient(app)
+from tests.conftest import AuthenticatedTestClient
 
 SAMPLE_SUMMARY = {
     "title_authors_abstract": "Title - Authors - Abstract",
@@ -118,9 +116,13 @@ async def test_collection_rebuild_on_embedding_model_change(
 
 @pytest.mark.asyncio
 async def test_mismatched_embedding_dimension_raises_clear_error_and_returns_409(
+    auth_client: AuthenticatedTestClient,
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Query with mismatched embedding dimension raises EmbeddingDimensionMismatchError and /api/chat returns 409."""
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-mock-key")
+    get_settings.cache_clear()
     chroma_client = chromadb.PersistentClient(path=str(tmp_path / ".chroma"))
     doc_hash = "b" * 64
     chunks = [{"text": "Stored chunk with dim 8", "page": 1}]
@@ -134,6 +136,7 @@ async def test_mismatched_embedding_dimension_raises_clear_error_and_returns_409
     with patch("app.services.qa.get_settings", return_value=settings):
         await index_document(doc_hash, chunks, doc_embedder, client=chroma_client)
 
+    auth_client.record_ownership(doc_hash)
     query_embedder_16 = DimensionEmbedder(dim=16)
 
     # Unit test: retrieve directly raises clear error
@@ -153,7 +156,7 @@ async def test_mismatched_embedding_dimension_raises_clear_error_and_returns_409
     app.dependency_overrides[get_chroma_client] = lambda: chroma_client
     app.dependency_overrides[get_embedding_function] = lambda: query_embedder_16
     try:
-        response = client.post(
+        response = auth_client.post(
             "/api/chat",
             json={"doc_hash": doc_hash, "message": "test query"},
         )
@@ -163,17 +166,21 @@ async def test_mismatched_embedding_dimension_raises_clear_error_and_returns_409
             == "The document index was built with a different embedding model. Re-upload the paper to rebuild it."
         )
     finally:
-        app.dependency_overrides.clear()
+        app.dependency_overrides.pop(get_chroma_client, None)
+        app.dependency_overrides.pop(get_embedding_function, None)
 
 
 def test_summary_cache_miss_on_model_name_change_calls_llm(
-    tmp_path: Path, caplog: pytest.LogCaptureFixture
+    auth_client: AuthenticatedTestClient,
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     """Summary cache entry with a different model_name is a miss and LLM is called again."""
     cache = SummaryCache(cache_dir=tmp_path)
     text_store = InMemoryPaperTextStore()
     doc_hash = "c" * 64
     text_store.set_text(doc_hash, "Full paper text content.")
+    auth_client.record_ownership(doc_hash)
 
     # Store entry under model-A
     cache.set(doc_hash, SAMPLE_SUMMARY, model_name="model-A")
@@ -213,7 +220,7 @@ def test_summary_cache_miss_on_model_name_change_calls_llm(
             patch("app.services.cache.get_settings", return_value=settings_b),
             caplog.at_level(logging.WARNING),
         ):
-            response = client.post("/api/summary", json={"doc_hash": doc_hash})
+            response = auth_client.post("/api/summary", json={"doc_hash": doc_hash})
             assert response.status_code == 200
             assert llm_call_count == 1
             assert any(
@@ -222,15 +229,20 @@ def test_summary_cache_miss_on_model_name_change_calls_llm(
                 for rec in caplog.records
             )
     finally:
-        app.dependency_overrides.clear()
+        app.dependency_overrides.pop(get_summary_cache, None)
+        app.dependency_overrides.pop(get_paper_text_store, None)
+        app.dependency_overrides.pop(get_llm_client, None)
 
 
-def test_api_status_error_on_summary_returns_502(tmp_path: Path) -> None:
+def test_api_status_error_on_summary_returns_502(
+    auth_client: AuthenticatedTestClient, tmp_path: Path
+) -> None:
     """APIStatusError with status 404 on /api/summary returns 502 with status code in detail and no response body."""
     cache = SummaryCache(cache_dir=tmp_path)
     text_store = InMemoryPaperTextStore()
     doc_hash = "d" * 64
     text_store.set_text(doc_hash, "Paper text.")
+    auth_client.record_ownership(doc_hash)
 
     secret_payload = '{"secret": "internal_error_should_not_leak"}'
     fake_response = httpx.Response(
@@ -264,7 +276,7 @@ def test_api_status_error_on_summary_returns_502(tmp_path: Path) -> None:
             patch("app.api.summary.get_settings", return_value=settings),
             patch("app.services.cache.get_settings", return_value=settings),
         ):
-            response = client.post("/api/summary", json={"doc_hash": doc_hash})
+            response = auth_client.post("/api/summary", json={"doc_hash": doc_hash})
             assert response.status_code == 502
             assert (
                 response.json()["detail"]
@@ -272,10 +284,14 @@ def test_api_status_error_on_summary_returns_502(tmp_path: Path) -> None:
             )
             assert "internal_error_should_not_leak" not in response.text
     finally:
-        app.dependency_overrides.clear()
+        app.dependency_overrides.pop(get_summary_cache, None)
+        app.dependency_overrides.pop(get_paper_text_store, None)
+        app.dependency_overrides.pop(get_llm_client, None)
 
 
-def test_api_status_error_on_upload_returns_502() -> None:
+def test_api_status_error_on_upload_returns_502(
+    auth_client: AuthenticatedTestClient,
+) -> None:
     """APIStatusError on /api/upload during embedding returns 502 with status code in detail and no response body."""
     secret_payload = '{"secret": "embedding_failure_leak"}'
     fake_response = httpx.Response(
@@ -294,7 +310,7 @@ def test_api_status_error_on_upload_returns_502() -> None:
     app.dependency_overrides[get_embedding_function] = lambda: failing_embed_fn
 
     try:
-        response = client.post(
+        response = auth_client.post(
             "/api/upload",
             files={"file": ("paper.pdf", io.BytesIO(pdf_bytes), "application/pdf")},
         )
@@ -305,7 +321,7 @@ def test_api_status_error_on_upload_returns_502() -> None:
         )
         assert "embedding_failure_leak" not in response.text
     finally:
-        app.dependency_overrides.clear()
+        app.dependency_overrides.pop(get_embedding_function, None)
 
 
 @pytest.mark.asyncio

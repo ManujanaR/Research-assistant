@@ -19,8 +19,6 @@ from app.core.dependencies import (
 from app.main import app
 from app.services.cache import SummaryCache
 
-client = TestClient(app)
-
 VALID_SUMMARY_RESPONSE = {
     "title_authors_abstract": "Attention Is All You Need - Vaswani et al. - Transformer Architecture",
     "problem_statement": "Sequential computation in recurrent models limits parallelization during training.",
@@ -178,7 +176,7 @@ def generate_two_page_pdf_bytes() -> bytes:
 
 @pytest.mark.asyncio
 async def test_full_e2e_flow_upload_summary_chat(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    auth_client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """End-to-end smoke test: upload 2-page PDF, generate summary, and stream chat answers with citations."""
     monkeypatch.setenv("OPENAI_API_KEY", "sk-mock-e2e-key")
@@ -205,7 +203,7 @@ async def test_full_e2e_flow_upload_summary_chat(
     try:
         # Step 1: Upload two-page PDF to /api/upload
         pdf_bytes = generate_two_page_pdf_bytes()
-        upload_resp = client.post(
+        upload_resp = auth_client.post(
             "/api/upload",
             files={"file": ("attention_paper.pdf", pdf_bytes, "application/pdf")},
         )
@@ -219,7 +217,7 @@ async def test_full_e2e_flow_upload_summary_chat(
         assert upload_data["chunk_count"] >= 2
 
         # Step 2: Request structured summary from /api/summary
-        summary_resp = client.post("/api/summary", json={"doc_hash": doc_hash})
+        summary_resp = auth_client.post("/api/summary", json={"doc_hash": doc_hash})
         assert summary_resp.status_code == 200, f"Summary failed: {summary_resp.text}"
         summary_data = summary_resp.json()
 
@@ -235,7 +233,7 @@ async def test_full_e2e_flow_upload_summary_chat(
             assert len(summary_data[key]) > 0
 
         # Step 3: Stream grounded chat answer from /api/chat
-        chat_resp = client.post(
+        chat_resp = auth_client.post(
             "/api/chat",
             json={
                 "doc_hash": doc_hash,
@@ -279,4 +277,8 @@ async def test_full_e2e_flow_upload_summary_chat(
         )
 
     finally:
-        app.dependency_overrides.clear()
+        app.dependency_overrides.pop(get_chroma_client, None)
+        app.dependency_overrides.pop(get_embedding_function, None)
+        app.dependency_overrides.pop(get_summary_cache, None)
+        app.dependency_overrides.pop(get_llm_client, None)
+        app.dependency_overrides.pop(get_chat_llm_client, None)

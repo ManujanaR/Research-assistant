@@ -6,7 +6,6 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
-from fastapi.testclient import TestClient
 
 from app.core.config import Settings, get_settings
 from app.core.dependencies import (
@@ -18,9 +17,9 @@ from app.main import app
 from app.services.cache import SummaryCache
 from app.services.summarizer import SUMMARY_GENERATION_FAILED_MESSAGE
 from app.services.summary_service import InMemoryPaperTextStore
+from tests.conftest import AuthenticatedTestClient
 from tests.test_summarizer import VALID_SUMMARY_DICT, FakeOpenAIClient
 
-client = TestClient(app)
 VALID_HASH = hashlib.sha256(b"commit 7 test paper bytes").hexdigest()
 
 
@@ -38,7 +37,9 @@ def clean_environment(
     get_settings.cache_clear()
     yield cache, text_store
 
-    app.dependency_overrides.clear()
+    app.dependency_overrides.pop(get_summary_cache, None)
+    app.dependency_overrides.pop(get_paper_text_store, None)
+    app.dependency_overrides.pop(get_llm_client, None)
     get_settings.cache_clear()
 
 
@@ -51,22 +52,25 @@ def test_default_summary_cache_dir_setting() -> None:
 
 
 def test_summary_cache_hit(
+    auth_client: AuthenticatedTestClient,
     clean_environment: tuple[SummaryCache, InMemoryPaperTextStore],
 ) -> None:
     """Verify that a cache hit returns 200 and does not construct or call the LLM client."""
     cache, _ = clean_environment
     cache.set(VALID_HASH, VALID_SUMMARY_DICT)
+    auth_client.record_ownership(VALID_HASH)
 
     fake_client = FakeOpenAIClient([])
     app.dependency_overrides[get_llm_client] = lambda: fake_client
 
-    response = client.post("/api/summary", json={"doc_hash": VALID_HASH})
+    response = auth_client.post("/api/summary", json={"doc_hash": VALID_HASH})
     assert response.status_code == 200
     assert response.json() == VALID_SUMMARY_DICT
     assert len(fake_client.chat.completions.calls) == 0
 
 
 def test_summary_cache_miss_with_text_present(
+    auth_client: AuthenticatedTestClient,
     clean_environment: tuple[SummaryCache, InMemoryPaperTextStore],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -76,24 +80,26 @@ def test_summary_cache_miss_with_text_present(
 
     _, text_store = clean_environment
     text_store.set_text(VALID_HASH, "Sample extracted paper text.")
+    auth_client.record_ownership(VALID_HASH)
 
     fake_client = FakeOpenAIClient([json.dumps(VALID_SUMMARY_DICT)])
     app.dependency_overrides[get_llm_client] = lambda: fake_client
 
     # First call: cache miss -> generates summary
-    resp1 = client.post("/api/summary", json={"doc_hash": VALID_HASH})
+    resp1 = auth_client.post("/api/summary", json={"doc_hash": VALID_HASH})
     assert resp1.status_code == 200
     assert resp1.json() == VALID_SUMMARY_DICT
     assert len(fake_client.chat.completions.calls) == 1
 
     # Second call: cache hit -> returns without additional client calls
-    resp2 = client.post("/api/summary", json={"doc_hash": VALID_HASH})
+    resp2 = auth_client.post("/api/summary", json={"doc_hash": VALID_HASH})
     assert resp2.status_code == 200
     assert resp2.json() == VALID_SUMMARY_DICT
     assert len(fake_client.chat.completions.calls) == 1
 
 
 def test_summary_cache_miss_summarizer_fails_after_retry(
+    auth_client: AuthenticatedTestClient,
     clean_environment: tuple[SummaryCache, InMemoryPaperTextStore],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -103,27 +109,30 @@ def test_summary_cache_miss_summarizer_fails_after_retry(
 
     _, text_store = clean_environment
     text_store.set_text(VALID_HASH, "Sample extracted paper text.")
+    auth_client.record_ownership(VALID_HASH)
 
     fake_client = FakeOpenAIClient(["malformed json 1", "malformed json 2"])
     app.dependency_overrides[get_llm_client] = lambda: fake_client
 
-    response = client.post("/api/summary", json={"doc_hash": VALID_HASH})
+    response = auth_client.post("/api/summary", json={"doc_hash": VALID_HASH})
     assert response.status_code == 502
     assert response.json() == {"detail": SUMMARY_GENERATION_FAILED_MESSAGE}
 
 
 def test_summary_cache_miss_text_missing(
+    auth_client: AuthenticatedTestClient,
     clean_environment: tuple[SummaryCache, InMemoryPaperTextStore],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Verify that missing paper text on cache miss returns HTTP 404 with exact message."""
     monkeypatch.setenv("OPENAI_API_KEY", "sk-mock-test-key")
     get_settings.cache_clear()
+    auth_client.record_ownership(VALID_HASH)
 
     fake_client = FakeOpenAIClient([])
     app.dependency_overrides[get_llm_client] = lambda: fake_client
 
-    response = client.post("/api/summary", json={"doc_hash": VALID_HASH})
+    response = auth_client.post("/api/summary", json={"doc_hash": VALID_HASH})
     assert response.status_code == 404
     assert response.json() == {"detail": "Document not found. Upload the PDF first."}
     assert len(fake_client.chat.completions.calls) == 0
@@ -137,13 +146,16 @@ def test_summary_cache_miss_text_missing(
         "A" * 64,
     ],
 )
-def test_summary_invalid_hashes_return_422(invalid_hash: str) -> None:
+def test_summary_invalid_hashes_return_422(
+    auth_client: AuthenticatedTestClient, invalid_hash: str
+) -> None:
     """Verify that invalid hashes return HTTP 422 Unprocessable Entity."""
-    response = client.post("/api/summary", json={"doc_hash": invalid_hash})
+    response = auth_client.post("/api/summary", json={"doc_hash": invalid_hash})
     assert response.status_code == 422
 
 
 def test_summary_cache_hit_with_no_openai_api_key(
+    auth_client: AuthenticatedTestClient,
     clean_environment: tuple[SummaryCache, InMemoryPaperTextStore],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -153,9 +165,10 @@ def test_summary_cache_hit_with_no_openai_api_key(
 
     cache, _ = clean_environment
     cache.set(VALID_HASH, VALID_SUMMARY_DICT)
+    auth_client.record_ownership(VALID_HASH)
 
     try:
-        response = client.post("/api/summary", json={"doc_hash": VALID_HASH})
+        response = auth_client.post("/api/summary", json={"doc_hash": VALID_HASH})
         assert response.status_code == 200
         assert response.json() == VALID_SUMMARY_DICT
     finally:
@@ -163,19 +176,21 @@ def test_summary_cache_hit_with_no_openai_api_key(
 
 
 def test_summary_cache_miss_with_no_openai_api_key(
+    auth_client: AuthenticatedTestClient,
     clean_environment: tuple[SummaryCache, InMemoryPaperTextStore],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Verify that a cache miss returns HTTP 503 when OPENAI_API_KEY is not configured."""
     monkeypatch.setenv("OPENAI_API_KEY", "")
     get_settings.cache_clear()
+    auth_client.record_ownership(VALID_HASH)
 
     # Ensure no LLM client override is active
     if get_llm_client in app.dependency_overrides:
         del app.dependency_overrides[get_llm_client]
 
     try:
-        response = client.post("/api/summary", json={"doc_hash": VALID_HASH})
+        response = auth_client.post("/api/summary", json={"doc_hash": VALID_HASH})
         assert response.status_code == 503
         assert response.json() == {"detail": "OpenAI API key is not configured."}
     finally:

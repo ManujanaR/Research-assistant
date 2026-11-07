@@ -5,7 +5,6 @@ from typing import Any
 
 import chromadb
 import pytest
-from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
 from app.core.dependencies import (
@@ -24,8 +23,7 @@ from app.services.qa import (
     extract_sources,
     index_document,
 )
-
-client = TestClient(app)
+from tests.conftest import AuthenticatedTestClient
 
 
 class FakeDelta:
@@ -151,7 +149,9 @@ def setup_chat_dependencies(tmp_path: Path):
     app.dependency_overrides[get_embedding_function] = lambda: embedder
     app.dependency_overrides[get_chat_llm_client] = lambda: fake_client
     yield
-    app.dependency_overrides.clear()
+    app.dependency_overrides.pop(get_chroma_client, None)
+    app.dependency_overrides.pop(get_embedding_function, None)
+    app.dependency_overrides.pop(get_chat_llm_client, None)
 
 
 def test_prompt_assembly_history_truncation_and_system_isolation() -> None:
@@ -234,7 +234,9 @@ def test_prompt_assembly_injection_contained_in_excerpts() -> None:
     assert open_tag < pwned_pos < close_tag
 
 
-def test_grounding_fallback_verbatim_in_system_and_stream(tmp_path: Path) -> None:
+def test_grounding_fallback_verbatim_in_system_and_stream(
+    auth_client: AuthenticatedTestClient, tmp_path: Path
+) -> None:
     """System prompt contains fallback sentence verbatim, and stubbed stream passes it unchanged."""
     assert FALLBACK_GROUNDING_MESSAGE in SYSTEM_PROMPT
 
@@ -252,6 +254,7 @@ def test_grounding_fallback_verbatim_in_system_and_stream(tmp_path: Path) -> Non
             client=chroma_client,
         )
     )
+    auth_client.record_ownership(doc_hash)
 
     fake_client = FakeChatClient(
         stream_factory=lambda **_: FakeChatStream(
@@ -267,7 +270,7 @@ def test_grounding_fallback_verbatim_in_system_and_stream(tmp_path: Path) -> Non
     app.dependency_overrides[get_embedding_function] = lambda: embedder
     app.dependency_overrides[get_chat_llm_client] = lambda: fake_client
 
-    response = client.post(
+    response = auth_client.post(
         "/api/chat",
         json={"doc_hash": doc_hash, "message": "What is the author's shoe size?"},
     )
@@ -278,7 +281,9 @@ def test_grounding_fallback_verbatim_in_system_and_stream(tmp_path: Path) -> Non
     assert streamed_full_answer == FALLBACK_GROUNDING_MESSAGE
 
 
-def test_sse_format_and_ordering(tmp_path: Path) -> None:
+def test_sse_format_and_ordering(
+    auth_client: AuthenticatedTestClient, tmp_path: Path
+) -> None:
     """Content-Type starts with text/event-stream; token events first, exactly one sources, then one done."""
     doc_hash = "2" * 64
     chroma_dir = tmp_path / "chroma_test"
@@ -293,6 +298,7 @@ def test_sse_format_and_ordering(tmp_path: Path) -> None:
             client=chroma_client,
         )
     )
+    auth_client.record_ownership(doc_hash)
 
     fake_client = FakeChatClient(
         stream_factory=lambda **_: FakeChatStream(tokens=["Answer", " chunk", " text."])
@@ -302,7 +308,7 @@ def test_sse_format_and_ordering(tmp_path: Path) -> None:
     app.dependency_overrides[get_embedding_function] = lambda: embedder
     app.dependency_overrides[get_chat_llm_client] = lambda: fake_client
 
-    response = client.post(
+    response = auth_client.post(
         "/api/chat",
         json={"doc_hash": doc_hash, "message": "Explain methodology"},
     )
@@ -322,7 +328,9 @@ def test_sse_format_and_ordering(tmp_path: Path) -> None:
     assert events[-1]["data"] == {}
 
 
-def test_source_provenance_and_snippet_rules(tmp_path: Path) -> None:
+def test_source_provenance_and_snippet_rules(
+    auth_client: AuthenticatedTestClient, tmp_path: Path
+) -> None:
     """Source page_number matches metadata, snippet is exact substring <= 200 chars, no ellipses."""
     doc_hash = "3" * 64
     chroma_dir = tmp_path / "chroma_test"
@@ -345,6 +353,7 @@ def test_source_provenance_and_snippet_rules(tmp_path: Path) -> None:
             client=chroma_client,
         )
     )
+    auth_client.record_ownership(doc_hash)
 
     fake_client = FakeChatClient(
         stream_factory=lambda **_: FakeChatStream(tokens=["Findings", " here."])
@@ -354,7 +363,7 @@ def test_source_provenance_and_snippet_rules(tmp_path: Path) -> None:
     app.dependency_overrides[get_embedding_function] = lambda: embedder
     app.dependency_overrides[get_chat_llm_client] = lambda: fake_client
 
-    response = client.post(
+    response = auth_client.post(
         "/api/chat",
         json={"doc_hash": doc_hash, "message": "Tell me about page 1 and page 2"},
     )
@@ -376,7 +385,9 @@ def test_source_provenance_and_snippet_rules(tmp_path: Path) -> None:
         assert any(src["snippet"] in chunk_text for chunk_text in stored_chunks)
 
 
-def test_unknown_doc_hash_returns_404_and_zero_llm_calls(tmp_path: Path) -> None:
+def test_unknown_doc_hash_returns_404_and_zero_llm_calls(
+    auth_client: AuthenticatedTestClient, tmp_path: Path
+) -> None:
     """Unknown doc_hash returns 404 with exact detail, and LLM client is called 0 times."""
     chroma_dir = tmp_path / "chroma_test"
     chroma_client = chromadb.PersistentClient(path=str(chroma_dir))
@@ -390,7 +401,7 @@ def test_unknown_doc_hash_returns_404_and_zero_llm_calls(tmp_path: Path) -> None
     app.dependency_overrides[get_chat_llm_client] = lambda: fake_client
 
     unknown_hash = "f" * 64
-    response = client.post(
+    response = auth_client.post(
         "/api/chat",
         json={"doc_hash": unknown_hash, "message": "Hello?"},
     )
@@ -399,16 +410,18 @@ def test_unknown_doc_hash_returns_404_and_zero_llm_calls(tmp_path: Path) -> None
     assert fake_client.call_count == 0
 
 
-def test_invalid_doc_hash_returns_422() -> None:
+def test_invalid_doc_hash_returns_422(auth_client: AuthenticatedTestClient) -> None:
     """Invalid doc_hash such as '../etc/passwd' returns 422."""
-    response = client.post(
+    response = auth_client.post(
         "/api/chat",
         json={"doc_hash": "../etc/passwd", "message": "Check password file"},
     )
     assert response.status_code == 422
 
 
-def test_midstream_failure_emits_error_and_no_done(tmp_path: Path) -> None:
+def test_midstream_failure_emits_error_and_no_done(
+    auth_client: AuthenticatedTestClient, tmp_path: Path
+) -> None:
     """Mid-stream model failure emits event: error and never emits event: done."""
     doc_hash = "4" * 64
     chroma_dir = tmp_path / "chroma_test"
@@ -423,6 +436,7 @@ def test_midstream_failure_emits_error_and_no_done(tmp_path: Path) -> None:
             client=chroma_client,
         )
     )
+    auth_client.record_ownership(doc_hash)
 
     fake_client = FakeChatClient(
         stream_factory=lambda **_: FakeChatStream(
@@ -435,7 +449,7 @@ def test_midstream_failure_emits_error_and_no_done(tmp_path: Path) -> None:
     app.dependency_overrides[get_embedding_function] = lambda: embedder
     app.dependency_overrides[get_chat_llm_client] = lambda: fake_client
 
-    response = client.post(
+    response = auth_client.post(
         "/api/chat",
         json={"doc_hash": doc_hash, "message": "Trigger error"},
     )
@@ -449,18 +463,18 @@ def test_midstream_failure_emits_error_and_no_done(tmp_path: Path) -> None:
     assert "Mid-stream connection error" in error_event["data"]["detail"]
 
 
-def test_message_length_validation() -> None:
+def test_message_length_validation(auth_client: AuthenticatedTestClient) -> None:
     """Message of length 2001 or length 0 returns 422."""
     doc_hash = "5" * 64
     # Length 2001
-    resp_too_long = client.post(
+    resp_too_long = auth_client.post(
         "/api/chat",
         json={"doc_hash": doc_hash, "message": "A" * 2001},
     )
     assert resp_too_long.status_code == 422
 
     # Length 0
-    resp_empty = client.post(
+    resp_empty = auth_client.post(
         "/api/chat",
         json={"doc_hash": doc_hash, "message": ""},
     )
@@ -509,7 +523,9 @@ def test_extract_snippet_picks_best_matching_sentence() -> None:
     assert len(snippet) <= 200
 
 
-def test_relevance_cutoff_drops_offtopic_and_keeps_ontopic(tmp_path: Path) -> None:
+def test_relevance_cutoff_drops_offtopic_and_keeps_ontopic(
+    auth_client: AuthenticatedTestClient, tmp_path: Path
+) -> None:
     """Off-topic question sends empty sources array; on-topic question keeps its citations."""
     doc_hash = "7" * 64
     chroma_dir = tmp_path / "chroma_test"
@@ -542,6 +558,7 @@ def test_relevance_cutoff_drops_offtopic_and_keeps_ontopic(tmp_path: Path) -> No
             client=chroma_client,
         )
     )
+    auth_client.record_ownership(doc_hash)
 
     fake_client = FakeChatClient(
         stream_factory=lambda **_: FakeChatStream(tokens=["Quantum", " response."])
@@ -553,7 +570,7 @@ def test_relevance_cutoff_drops_offtopic_and_keeps_ontopic(tmp_path: Path) -> No
 
     try:
         # On-topic question: 'quantum' matches chunk vector -> cosine dist = 0.0 <= 0.6
-        resp_on = client.post(
+        resp_on = auth_client.post(
             "/api/chat",
             json={"doc_hash": doc_hash, "message": "Explain quantum computing"},
         )
@@ -564,7 +581,7 @@ def test_relevance_cutoff_drops_offtopic_and_keeps_ontopic(tmp_path: Path) -> No
         assert sources_on[0]["page_number"] == 1
 
         # Off-topic question: 'cooking' vector is orthogonal -> cosine dist = 1.0 > 0.6
-        resp_off = client.post(
+        resp_off = auth_client.post(
             "/api/chat",
             json={"doc_hash": doc_hash, "message": "How do I start cooking soup?"},
         )
@@ -573,7 +590,9 @@ def test_relevance_cutoff_drops_offtopic_and_keeps_ontopic(tmp_path: Path) -> No
         sources_off = next(e["data"] for e in events_off if e["event"] == "sources")
         assert sources_off == []
     finally:
-        app.dependency_overrides.clear()
+        app.dependency_overrides.pop(get_chroma_client, None)
+        app.dependency_overrides.pop(get_embedding_function, None)
+        app.dependency_overrides.pop(get_chat_llm_client, None)
 
 
 def test_extract_sources_deduplication() -> None:

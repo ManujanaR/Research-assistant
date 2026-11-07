@@ -10,8 +10,6 @@ from app.core.config import get_settings
 from app.core.dependencies import get_chroma_client, get_embedding_function
 from app.main import app
 
-client = TestClient(app)
-
 
 def make_valid_pdf_bytes(text: str = "Valid research paper content") -> bytes:
     """Generate minimal valid PDF bytes with extractable text."""
@@ -40,13 +38,14 @@ def override_chroma_and_embed(
 
     yield
 
-    app.dependency_overrides.clear()
+    app.dependency_overrides.pop(get_chroma_client, None)
+    app.dependency_overrides.pop(get_embedding_function, None)
 
 
-def test_upload_invalid_content_type() -> None:
+def test_upload_invalid_content_type(auth_client: TestClient) -> None:
     """Verify that a non-PDF content type returns HTTP 415."""
     payload = b"%PDF-1.4 test"
-    response = client.post(
+    response = auth_client.post(
         "/api/upload",
         files={"file": ("document.pdf", payload, "text/plain")},
     )
@@ -56,10 +55,10 @@ def test_upload_invalid_content_type() -> None:
     }
 
 
-def test_upload_invalid_extension() -> None:
+def test_upload_invalid_extension(auth_client: TestClient) -> None:
     """Verify that a non-PDF extension returns HTTP 415 even with application/pdf MIME type."""
     payload = b"%PDF-1.4 test"
-    response = client.post(
+    response = auth_client.post(
         "/api/upload",
         files={"file": ("paper.txt", payload, "application/pdf")},
     )
@@ -69,10 +68,10 @@ def test_upload_invalid_extension() -> None:
     }
 
 
-def test_upload_case_insensitive_extension() -> None:
+def test_upload_case_insensitive_extension(auth_client: TestClient) -> None:
     """Verify that uppercase .PDF extension is accepted and returns HTTP 200."""
     payload = make_valid_pdf_bytes("Uppercase PDF extension test")
-    response = client.post(
+    response = auth_client.post(
         "/api/upload",
         files={"file": ("paper.PDF", payload, "application/pdf")},
     )
@@ -83,14 +82,16 @@ def test_upload_case_insensitive_extension() -> None:
     assert data["doc_hash"] == hashlib.sha256(payload).hexdigest()
 
 
-def test_upload_exceeds_size_limit(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_upload_exceeds_size_limit(
+    auth_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Verify that a payload exceeding MAX_UPLOAD_MB returns HTTP 413."""
     monkeypatch.setenv("MAX_UPLOAD_MB", "1")
     get_settings.cache_clear()
     try:
         limit_bytes = 1 * 1024 * 1024
         payload = b"x" * (limit_bytes + 1)
-        response = client.post(
+        response = auth_client.post(
             "/api/upload",
             files={"file": ("large.pdf", payload, "application/pdf")},
         )
@@ -102,10 +103,10 @@ def test_upload_exceeds_size_limit(monkeypatch: pytest.MonkeyPatch) -> None:
         get_settings.cache_clear()
 
 
-def test_upload_valid_pdf_success() -> None:
+def test_upload_valid_pdf_success(auth_client: TestClient) -> None:
     """Verify that a valid PDF returns HTTP 200 with accurate size and SHA-256 hash."""
     payload = make_valid_pdf_bytes("Valid test content for research paper")
-    response = client.post(
+    response = auth_client.post(
         "/api/upload",
         files={"file": ("research_paper.pdf", payload, "application/pdf")},
     )
