@@ -18,6 +18,16 @@ def _resolve_backend_path(raw_path: str) -> str:
     return str(path.resolve())
 
 
+def _resolve_database_url(url: str) -> str:
+    sqlite_prefix = "sqlite:///"
+    if url.startswith(sqlite_prefix):
+        raw_path = url[len(sqlite_prefix) :]
+        if raw_path != ":memory:" and not raw_path.startswith("/"):
+            resolved = _resolve_backend_path(raw_path)
+            return f"sqlite:///{resolved}"
+    return url
+
+
 class Settings(BaseSettings):
     """Application settings loaded from environment variables and .env file."""
 
@@ -49,12 +59,27 @@ class Settings(BaseSettings):
     )
     chroma_dir: str = Field(default=".chroma", alias="CHROMA_DIR")
 
+    environment: str = Field(default="development", alias="ENVIRONMENT")
+    auth_secret_key: str = Field(default="", alias="AUTH_SECRET_KEY")
+    auth_token_ttl_minutes: int = Field(
+        default=60, gt=0, alias="AUTH_TOKEN_TTL_MINUTES"
+    )
+    database_url: str = Field(default="sqlite:///./data/app.db", alias="DATABASE_URL")
+
     def model_post_init(self, context: Any, /) -> None:
-        """Resolve directory paths relative to the backend folder and log them."""
+        """Resolve directory paths relative to the backend folder and validate settings."""
         self.summary_cache_dir = _resolve_backend_path(self.summary_cache_dir)
         self.chroma_dir = _resolve_backend_path(self.chroma_dir)
+        self.database_url = _resolve_database_url(self.database_url)
         logger.info("Resolved SUMMARY_CACHE_DIR: %s", self.summary_cache_dir)
         logger.info("Resolved CHROMA_DIR: %s", self.chroma_dir)
+        logger.info("Resolved DATABASE_URL: %s", self.database_url)
+
+        if (
+            self.environment.strip().lower() == "production"
+            and not self.auth_secret_key.strip()
+        ):
+            raise ValueError("AUTH_SECRET_KEY is required in production environment")
 
     @property
     def cors_origins_list(self) -> list[str]:
