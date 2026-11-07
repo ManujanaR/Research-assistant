@@ -3,12 +3,16 @@ from typing import Annotated, Any
 
 import chromadb
 from chromadb.api import ClientAPI
-from fastapi import Depends
+from fastapi import Depends, HTTPException, Request, status
+from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
+from app.db.session import get_db
+from app.models.user import User
 from app.services.cache import SummaryCache
 from app.services.qa import EmbedFn
 from app.services.summary_service import InMemoryPaperTextStore, PaperTextStore
+from app.services.token_service import verify_access_token
 
 # Process-wide shared singleton for paper text store
 _paper_text_store = InMemoryPaperTextStore()
@@ -71,3 +75,32 @@ def get_llm_client() -> Any:
 def get_chat_llm_client() -> Any:
     """Build the OpenAI async client for chat from OPENAI_API_KEY only when called."""
     return create_async_openai_client()
+
+
+async def get_current_user(
+    request: Request,
+    db: Annotated[Session, Depends(get_db)],
+) -> User:
+    """Read auth_token from cookie, verify JWT, load user, and raise 401 on failure."""
+    token = request.cookies.get("auth_token")
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated",
+        )
+
+    user_id = verify_access_token(token)
+    if not user_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired authentication token",
+        )
+
+    user = db.query(User).filter(User.id == user_id).first()
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User not found",
+        )
+
+    return user
