@@ -1,4 +1,4 @@
-# Mitra Research Assistant
+# Research Assistant
 
 A full-stack web application designed for researchers and engineers to upload research papers in PDF format, receive a structured 5-section summary, and ask natural-language questions through an interactive, grounded chat interface with page citations.
 
