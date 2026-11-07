@@ -14,6 +14,7 @@ import { SourceCard } from "./SourceCard";
 import { SourcePanel } from "./SourcePanel";
 import { StudioPanel } from "./StudioPanel";
 import { ChatPanel } from "./ChatPanel";
+import { ThemeToggle } from "./ThemeToggle";
 import Home from "@/app/page";
 import {
   ApiError,
@@ -693,6 +694,35 @@ describe("Frontend UI Components", () => {
       // Press ArrowLeft -> wraps back to Studio (index 2)
       fireEvent.keyDown(tabs[0], { key: "ArrowLeft" });
       expect(tabs[2].getAttribute("aria-selected")).toBe("true");
+    });
+  });
+
+  describe("ThemeToggle", () => {
+    beforeEach(() => {
+      localStorage.clear();
+      document.documentElement.classList.remove("dark");
+    });
+
+    it("toggles theme and updates document.documentElement class and localStorage", () => {
+      render(<ThemeToggle />);
+
+      const toggleBtn = screen.getByRole("button", {
+        name: /switch to dark mode/i,
+      });
+      expect(toggleBtn).toBeDefined();
+
+      fireEvent.click(toggleBtn);
+
+      expect(document.documentElement.classList.contains("dark")).toBe(true);
+      expect(localStorage.getItem("theme")).toBe("dark");
+
+      const lightBtn = screen.getByRole("button", {
+        name: /switch to light mode/i,
+      });
+      fireEvent.click(lightBtn);
+
+      expect(document.documentElement.classList.contains("dark")).toBe(false);
+      expect(localStorage.getItem("theme")).toBe("light");
     });
   });
 });
