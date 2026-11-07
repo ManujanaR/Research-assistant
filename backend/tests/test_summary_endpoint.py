@@ -43,10 +43,11 @@ def clean_environment(
 
 
 def test_default_summary_cache_dir_setting() -> None:
-    """Verify that summary_cache_dir defaults to .cache/summaries."""
+    """Verify that summary_cache_dir defaults to .cache/summaries resolved to absolute path."""
     with patch.dict(os.environ, {}, clear=True):
         settings = Settings(_env_file=None)
-        assert settings.summary_cache_dir == ".cache/summaries"
+        assert Path(settings.summary_cache_dir).is_absolute()
+        assert settings.summary_cache_dir.endswith(".cache/summaries")
 
 
 def test_summary_cache_hit(

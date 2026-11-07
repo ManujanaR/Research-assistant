@@ -1,5 +1,7 @@
+import logging
 from typing import Annotated, Any
 
+import openai
 from fastapi import APIRouter, Depends, HTTPException, Request
 
 from app.core.config import get_settings
@@ -16,6 +18,8 @@ from app.services.summarizer import (
     generate_summary,
 )
 from app.services.summary_service import PaperTextStore
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api", tags=["summary"])
 
@@ -59,6 +63,42 @@ async def get_or_generate_summary(
 
     try:
         summary = await generate_summary(text, client)
+    except openai.AuthenticationError as exc:
+        logger.warning(
+            "AI provider AuthenticationError during summary: status %s",
+            getattr(exc, "status_code", 401),
+        )
+        raise HTTPException(
+            status_code=503,
+            detail="AI provider authentication failed.",
+        ) from exc
+    except openai.RateLimitError as exc:
+        logger.warning(
+            "AI provider RateLimitError during summary: status %s",
+            getattr(exc, "status_code", 429),
+        )
+        raise HTTPException(
+            status_code=503,
+            detail="AI provider rate limit exceeded.",
+        ) from exc
+    except (openai.APIConnectionError, openai.APITimeoutError) as exc:
+        logger.warning(
+            "AI provider connection/timeout error during summary: %s",
+            type(exc).__name__,
+        )
+        raise HTTPException(
+            status_code=503,
+            detail="AI provider connection or timeout error.",
+        ) from exc
+    except openai.APIStatusError as exc:
+        logger.warning(
+            "AI provider APIStatusError during summary: status %s",
+            exc.status_code,
+        )
+        raise HTTPException(
+            status_code=502,
+            detail=f"The AI provider returned an error (status {exc.status_code}). Check MODEL_NAME and EMBEDDING_MODEL in backend/.env.",
+        ) from exc
     except SummaryGenerationError as exc:
         raise HTTPException(
             status_code=502,

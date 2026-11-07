@@ -1,5 +1,7 @@
+import logging
 from typing import Annotated, Any
 
+import openai
 from chromadb.api import ClientAPI
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
@@ -11,6 +13,7 @@ from app.core.dependencies import (
 )
 from app.schemas.chat import ChatRequest
 from app.services.qa import (
+    EmbeddingDimensionMismatchError,
     EmbedFn,
     assemble_chat_messages,
     collection_exists,
@@ -18,6 +21,8 @@ from app.services.qa import (
     retrieve,
     stream_chat_response,
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api", tags=["chat"])
 
@@ -36,13 +41,56 @@ async def chat(
             detail="Document not found. Upload the PDF first.",
         )
 
-    chunks = await retrieve(
-        doc_hash=request.doc_hash,
-        query=request.message,
-        embed_fn=embed_fn,
-        top_k=5,
-        client=chroma_client,
-    )
+    try:
+        chunks = await retrieve(
+            doc_hash=request.doc_hash,
+            query=request.message,
+            embed_fn=embed_fn,
+            top_k=5,
+            client=chroma_client,
+        )
+    except EmbeddingDimensionMismatchError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail="The document index was built with a different embedding model. Re-upload the paper to rebuild it.",
+        ) from exc
+    except openai.AuthenticationError as exc:
+        logger.warning(
+            "AI provider AuthenticationError during chat retrieval: status %s",
+            getattr(exc, "status_code", 401),
+        )
+        raise HTTPException(
+            status_code=503,
+            detail="AI provider authentication failed.",
+        ) from exc
+    except openai.RateLimitError as exc:
+        logger.warning(
+            "AI provider RateLimitError during chat retrieval: status %s",
+            getattr(exc, "status_code", 429),
+        )
+        raise HTTPException(
+            status_code=503,
+            detail="AI provider rate limit exceeded.",
+        ) from exc
+    except (openai.APIConnectionError, openai.APITimeoutError) as exc:
+        logger.warning(
+            "AI provider connection/timeout error during chat retrieval: %s",
+            type(exc).__name__,
+        )
+        raise HTTPException(
+            status_code=503,
+            detail="AI provider connection or timeout error.",
+        ) from exc
+    except openai.APIStatusError as exc:
+        logger.warning(
+            "AI provider APIStatusError during chat retrieval: status %s",
+            exc.status_code,
+        )
+        raise HTTPException(
+            status_code=502,
+            detail=f"The AI provider returned an error (status {exc.status_code}). Check MODEL_NAME and EMBEDDING_MODEL in backend/.env.",
+        ) from exc
+
     sources = extract_sources(chunks)
     messages = assemble_chat_messages(
         question=request.message,

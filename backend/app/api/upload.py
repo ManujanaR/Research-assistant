@@ -1,7 +1,9 @@
+import logging
 import os
 import tempfile
 from typing import Annotated
 
+import openai
 from chromadb.api import ClientAPI
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 
@@ -19,6 +21,8 @@ from app.services.pdf_parser import (
 from app.services.qa import EmbedFn, index_document
 from app.services.summary_service import PaperTextStore
 from app.services.upload_validation import validate_and_hash_upload
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api", tags=["upload"])
 
@@ -52,9 +56,46 @@ async def upload_document(
         text_store.set_text(doc_hash, full_text)
 
         # Index in ChromaDB
-        await index_document(
-            doc_hash, parsed_doc.chunks, embed_fn, client=chroma_client
-        )
+        try:
+            await index_document(
+                doc_hash, parsed_doc.chunks, embed_fn, client=chroma_client
+            )
+        except openai.AuthenticationError as exc:
+            logger.warning(
+                "AI provider AuthenticationError during upload: status %s",
+                getattr(exc, "status_code", 401),
+            )
+            raise HTTPException(
+                status_code=503,
+                detail="AI provider authentication failed.",
+            ) from exc
+        except openai.RateLimitError as exc:
+            logger.warning(
+                "AI provider RateLimitError during upload: status %s",
+                getattr(exc, "status_code", 429),
+            )
+            raise HTTPException(
+                status_code=503,
+                detail="AI provider rate limit exceeded.",
+            ) from exc
+        except (openai.APIConnectionError, openai.APITimeoutError) as exc:
+            logger.warning(
+                "AI provider connection/timeout error during upload: %s",
+                type(exc).__name__,
+            )
+            raise HTTPException(
+                status_code=503,
+                detail="AI provider connection or timeout error.",
+            ) from exc
+        except openai.APIStatusError as exc:
+            logger.warning(
+                "AI provider APIStatusError during upload: status %s",
+                exc.status_code,
+            )
+            raise HTTPException(
+                status_code=502,
+                detail=f"The AI provider returned an error (status {exc.status_code}). Check MODEL_NAME and EMBEDDING_MODEL in backend/.env.",
+            ) from exc
 
         return UploadResponse(
             doc_hash=doc_hash,

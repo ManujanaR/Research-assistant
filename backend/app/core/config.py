@@ -1,8 +1,21 @@
+import logging
 from functools import lru_cache
-from typing import Literal
+from pathlib import Path
+from typing import Any, Literal
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+logger = logging.getLogger(__name__)
+
+BACKEND_DIR = Path(__file__).resolve().parent.parent.parent
+
+
+def _resolve_backend_path(raw_path: str) -> str:
+    path = Path(raw_path)
+    if not path.is_absolute():
+        return str((BACKEND_DIR / path).resolve())
+    return str(path.resolve())
 
 
 class Settings(BaseSettings):
@@ -32,6 +45,13 @@ class Settings(BaseSettings):
         default=".cache/summaries", alias="SUMMARY_CACHE_DIR"
     )
     chroma_dir: str = Field(default=".chroma", alias="CHROMA_DIR")
+
+    def model_post_init(self, context: Any, /) -> None:
+        """Resolve directory paths relative to the backend folder and log them."""
+        self.summary_cache_dir = _resolve_backend_path(self.summary_cache_dir)
+        self.chroma_dir = _resolve_backend_path(self.chroma_dir)
+        logger.info("Resolved SUMMARY_CACHE_DIR: %s", self.summary_cache_dir)
+        logger.info("Resolved CHROMA_DIR: %s", self.chroma_dir)
 
     @property
     def cors_origins_list(self) -> list[str]:

@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any
 
 import chromadb
+import openai
 from chromadb.api import ClientAPI
 
 from app.core.config import get_settings
@@ -37,6 +38,10 @@ class RetrievedChunk:
     text: str
     page: int
     distance: float
+
+
+class EmbeddingDimensionMismatchError(ValueError):
+    """Raised when query embedding dimension does not match collection embedding dimension."""
 
 
 def _validate_hash(doc_hash: str) -> None:
@@ -203,6 +208,34 @@ async def stream_chat_response(
         sources_payload = [s.model_dump() for s in sources]
         yield f"event: sources\ndata: {json.dumps(sources_payload)}\n\n"
         yield f"event: done\ndata: {json.dumps({})}\n\n"
+    except openai.AuthenticationError as exc:
+        logger.warning(
+            "AI provider AuthenticationError during chat streaming: status %s",
+            getattr(exc, "status_code", 401),
+        )
+        yield f"event: error\ndata: {json.dumps({'detail': 'AI provider authentication failed.'})}\n\n"
+    except openai.RateLimitError as exc:
+        logger.warning(
+            "AI provider RateLimitError during chat streaming: status %s",
+            getattr(exc, "status_code", 429),
+        )
+        yield f"event: error\ndata: {json.dumps({'detail': 'AI provider rate limit exceeded.'})}\n\n"
+    except (openai.APIConnectionError, openai.APITimeoutError) as exc:
+        logger.warning(
+            "AI provider connection/timeout error during chat streaming: %s",
+            type(exc).__name__,
+        )
+        yield f"event: error\ndata: {json.dumps({'detail': 'AI provider connection or timeout error.'})}\n\n"
+    except openai.APIStatusError as exc:
+        logger.warning(
+            "AI provider APIStatusError during chat streaming: status %s",
+            exc.status_code,
+        )
+        detail_msg = (
+            f"The AI provider returned an error (status {exc.status_code}). "
+            "Check MODEL_NAME and EMBEDDING_MODEL in backend/.env."
+        )
+        yield f"event: error\ndata: {json.dumps({'detail': detail_msg})}\n\n"
     except Exception as exc:
         logger.exception("Error during chat response streaming: %s", type(exc).__name__)
         yield f"event: error\ndata: {json.dumps({'detail': str(exc)})}\n\n"
@@ -223,39 +256,49 @@ async def index_document(
     if not chunks:
         raise ValueError("Document has zero chunks; cannot index.")
 
+    settings = get_settings()
     if client is None:
-        settings = get_settings()
         client = chromadb.PersistentClient(path=settings.chroma_dir)
 
     collection_name = get_chroma_collection_name(doc_hash)
-    collection = client.get_or_create_collection(
-        name=collection_name,
-        metadata={"hnsw:space": "cosine"},
-    )
 
-    # If already indexed with matching count, skip embedding
-    current_count = collection.count()
-    if current_count == len(chunks):
-        logger.info(
-            "Collection %s already indexed with %d chunks; skipping re-indexing",
-            collection_name,
-            current_count,
-        )
-        return
+    # Check if collection already exists
+    existing_collection = None
+    try:
+        existing_collection = client.get_collection(name=collection_name)
+    except (chromadb.errors.ChromaError, ValueError, KeyError):
+        existing_collection = None
 
-    # If count mismatch (e.g. previous partial write), reset collection
-    if current_count > 0:
-        logger.warning(
-            "Collection %s has count mismatch (%d != %d); resetting collection",
-            collection_name,
-            current_count,
-            len(chunks),
-        )
-        client.delete_collection(name=collection_name)
-        collection = client.get_or_create_collection(
-            name=collection_name,
-            metadata={"hnsw:space": "cosine"},
-        )
+    if existing_collection is not None:
+        coll_meta = existing_collection.metadata or {}
+        stored_model = coll_meta.get("embedding_model")
+        if stored_model != settings.embedding_model:
+            logger.warning(
+                "Collection %s index was rebuilt because the embedding model changed (%s -> %s)",
+                collection_name,
+                stored_model,
+                settings.embedding_model,
+            )
+            client.delete_collection(name=collection_name)
+            existing_collection = None
+        else:
+            current_count = existing_collection.count()
+            if current_count == len(chunks):
+                logger.info(
+                    "Collection %s already indexed with %d chunks; skipping re-indexing",
+                    collection_name,
+                    current_count,
+                )
+                return
+            else:
+                logger.warning(
+                    "Collection %s has count mismatch (%d != %d); resetting collection",
+                    collection_name,
+                    current_count,
+                    len(chunks),
+                )
+                client.delete_collection(name=collection_name)
+                existing_collection = None
 
     logger.info(
         "Embedding and indexing %d chunks for doc_hash %s", len(chunks), doc_hash
@@ -265,6 +308,16 @@ async def index_document(
     metadatas: list[dict[str, Any]] = [{"page": int(c["page"])} for c in chunks]
 
     embeddings = await embed_fn(texts)
+    embedding_dim = len(embeddings[0]) if embeddings else 0
+
+    collection = client.create_collection(
+        name=collection_name,
+        metadata={
+            "hnsw:space": "cosine",
+            "embedding_model": settings.embedding_model,
+            "embedding_dim": embedding_dim,
+        },
+    )
     collection.add(
         ids=ids,
         documents=texts,
@@ -309,6 +362,15 @@ async def retrieve(
         return []
 
     query_embeddings = await embed_fn([query])
+    query_dim = len(query_embeddings[0]) if query_embeddings else 0
+
+    coll_meta = collection.metadata or {}
+    stored_dim = coll_meta.get("embedding_dim")
+    if stored_dim is not None and query_dim != stored_dim:
+        raise EmbeddingDimensionMismatchError(
+            f"Query embedding dimension ({query_dim}) does not match collection embedding dimension ({stored_dim})."
+        )
+
     query_result = collection.query(
         query_embeddings=query_embeddings,
         n_results=clamped_k,
