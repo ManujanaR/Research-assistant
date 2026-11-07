@@ -366,7 +366,7 @@ describe("Frontend UI Components", () => {
 
     it("StudioPanel renders summary header and child SummaryView", () => {
       render(<StudioPanel summary={null} isLoading={false} error={null} />);
-      expect(screen.getByText("Studio")).toBeDefined();
+      expect(screen.getByText("Summary")).toBeDefined();
       expect(screen.getByText("No summary available")).toBeDefined();
     });
   });
@@ -650,7 +650,7 @@ describe("Frontend UI Components", () => {
       expect(tabs).toHaveLength(3);
       expect(tabs[0].textContent).toContain("Source");
       expect(tabs[1].textContent).toContain("Chat");
-      expect(tabs[2].textContent).toContain("Studio");
+      expect(tabs[2].textContent).toContain("Summary");
 
       // Chat is default tab after upload
       expect(tabs[1].getAttribute("aria-selected")).toBe("true");

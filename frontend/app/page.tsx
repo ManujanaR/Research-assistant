@@ -23,7 +23,7 @@ interface TabItem {
 const MOBILE_TABS: readonly TabItem[] = [
   { id: "source", label: "Source", icon: BookOpen },
   { id: "chat", label: "Chat", icon: MessageSquare },
-  { id: "studio", label: "Studio", icon: Sparkles },
+  { id: "studio", label: "Summary", icon: Sparkles },
 ] as const;
 
 export default function Home() {
@@ -31,6 +31,33 @@ export default function Home() {
   const [summary, setSummary] = useState<SummaryResponse | null>(null);
   const [isSummaryLoading, setIsSummaryLoading] = useState(false);
   const [summaryError, setSummaryError] = useState<string | null>(null);
+
+  // Desktop summary panel adjustable width (default 380px, min 280px, max 700px)
+  const [summaryWidth, setSummaryWidth] = useState(380);
+  const isResizingRef = useRef(false);
+
+  const startResizing = (mouseDownEvent: React.MouseEvent) => {
+    mouseDownEvent.preventDefault();
+    isResizingRef.current = true;
+    const startX = mouseDownEvent.clientX;
+    const startWidth = summaryWidth;
+
+    const onMouseMove = (moveEvent: MouseEvent) => {
+      if (!isResizingRef.current) return;
+      const delta = startX - moveEvent.clientX;
+      const newWidth = Math.min(Math.max(startWidth + delta, 280), 700);
+      setSummaryWidth(newWidth);
+    };
+
+    const onMouseUp = () => {
+      isResizingRef.current = false;
+      window.removeEventListener("mousemove", onMouseMove);
+      window.removeEventListener("mouseup", onMouseUp);
+    };
+
+    window.addEventListener("mousemove", onMouseMove);
+    window.addEventListener("mouseup", onMouseUp);
+  };
 
   // Mobile navigation state: default to 'chat' consistently on server and client
   const [activeTab, setActiveTab] = useState<MobileTab>("chat");
@@ -113,10 +140,22 @@ export default function Home() {
           <ChatPanel docHash={uploadResult?.doc_hash ?? ""} />
         </section>
 
-        {/* Right Column: Structured Summary Studio */}
+        {/* Draggable Divider Handle to adjust summary panel size on desktop */}
+        <div
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize summary panel"
+          onMouseDown={startResizing}
+          className="w-1.5 hover:w-2 z-10 cursor-col-resize hover:bg-blue-500/40 dark:hover:bg-accent-blue/40 active:bg-blue-600 dark:active:bg-accent-blue transition-colors flex items-center justify-center group flex-shrink-0 select-none"
+        >
+          <div className="w-0.5 h-8 rounded-full bg-border-subtle group-hover:bg-blue-500 dark:group-hover:bg-accent-blue transition-colors" />
+        </div>
+
+        {/* Right Column: Structured Summary */}
         <aside
           data-testid="desktop-studio-panel"
-          className="w-[360px] flex-shrink-0 h-full overflow-y-auto border-l border-border-subtle bg-surface-panel transition-colors"
+          style={{ width: `${summaryWidth}px` }}
+          className="flex-shrink-0 h-full overflow-y-auto border-l border-border-subtle bg-surface-panel transition-colors"
         >
           <StudioPanel
             summary={summary}

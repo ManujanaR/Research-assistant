@@ -21,7 +21,7 @@ export function StudioPanel({ summary, isLoading, error }: StudioPanelProps) {
         <div className="flex items-center gap-2">
           <Sparkles className="w-4 h-4 text-blue-600 dark:text-accent-blue" />
           <h2 className="text-sm font-semibold text-text-primary">
-            Studio
+            Summary
           </h2>
         </div>
         {isLoading && (
