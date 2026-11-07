@@ -116,17 +116,6 @@ MODEL_NAME=gpt-4o
 EMBEDDING_MODEL=text-embedding-3-small
 ```
 
-##### OpenRouter (OpenAI-Compatible)
-
-```env
-LLM_PROVIDER=openai
-OPENAI_API_KEY=sk-or-v1-...
-OPENAI_BASE_URL=https://openrouter.ai/api/v1
-MODEL_NAME=openai/gpt-4o
-EMBEDDING_MODEL=openai/text-embedding-3-small
-```
-
-> **Note**: OpenRouter requires an active OpenRouter API key and credits on your OpenRouter account.
 
 #### Citation Threshold Calibration
 
