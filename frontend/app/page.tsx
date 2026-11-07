@@ -107,15 +107,15 @@ export default function Home() {
   };
 
   return (
-    <div className="w-full h-full flex flex-col flex-1 min-h-0 overflow-hidden bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors duration-150">
+    <div className="w-full h-full flex flex-col flex-1 min-h-0 overflow-hidden bg-bg-base text-text-primary transition-colors duration-150">
       {!uploadResult ? (
         <div className="flex-1 overflow-y-auto px-4 py-8 sm:py-12">
           <div className="max-w-2xl mx-auto">
             <div className="text-center mb-8">
-              <h1 className="text-3xl font-extrabold tracking-tight text-slate-900 dark:text-slate-100 sm:text-4xl">
+              <h1 className="text-3xl font-extrabold tracking-tight text-text-primary sm:text-4xl">
                 Research Paper Assistant
               </h1>
-              <p className="mt-3 text-sm sm:text-base text-slate-600 dark:text-slate-400 max-w-lg mx-auto">
+              <p className="mt-3 text-sm sm:text-base text-text-secondary max-w-lg mx-auto">
                 Upload an academic paper to generate an instant 5-part structured
                 summary and chat with answers strictly grounded in the document.
               </p>
@@ -133,7 +133,7 @@ export default function Home() {
           {/* Left Panel: Document Info & Upload reset */}
           <aside
             data-testid="desktop-source-panel"
-            className="w-[280px] flex-shrink-0 h-full overflow-y-auto border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 transition-colors"
+            className="w-[280px] flex-shrink-0 h-full overflow-y-auto border-r border-border-subtle bg-surface-panel transition-colors"
           >
             <SourcePanel
               filename={uploadResult.filename}
@@ -147,7 +147,7 @@ export default function Home() {
           {/* Center Column: Q&A Chat */}
           <section
             data-testid="desktop-chat-panel"
-            className="flex-1 min-w-0 h-full overflow-hidden p-3 sm:p-4 bg-slate-50 dark:bg-slate-950 transition-colors"
+            className="flex-1 min-w-0 h-full overflow-hidden p-3 sm:p-4 bg-bg-base transition-colors"
           >
             <ChatPanel docHash={uploadResult.doc_hash} />
           </section>
@@ -155,7 +155,7 @@ export default function Home() {
           {/* Right Column: Structured Summary Studio */}
           <aside
             data-testid="desktop-studio-panel"
-            className="w-[360px] flex-shrink-0 h-full overflow-y-auto border-l border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 transition-colors"
+            className="w-[360px] flex-shrink-0 h-full overflow-y-auto border-l border-border-subtle bg-surface-panel transition-colors"
           >
             <StudioPanel
               summary={summary}
@@ -184,7 +184,7 @@ export default function Home() {
               </div>
             )}
             {activeTab === "chat" && (
-              <div className="h-full p-2.5 sm:p-3 bg-slate-50 dark:bg-slate-950">
+              <div className="h-full p-2.5 sm:p-3 bg-bg-base">
                 <ChatPanel docHash={uploadResult.doc_hash} />
               </div>
             )}
@@ -203,7 +203,7 @@ export default function Home() {
           <nav
             role="tablist"
             aria-label="Workspace tabs"
-            className="h-16 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex items-center justify-around flex-shrink-0 px-2 pb-safe shadow-lg transition-colors"
+            className="h-16 border-t border-border-subtle bg-surface-panel flex items-center justify-around flex-shrink-0 px-2 pb-safe shadow-lg transition-colors"
           >
             {MOBILE_TABS.map((tab, index) => {
               const isSelected = activeTab === tab.id;
@@ -224,8 +224,8 @@ export default function Home() {
                   onKeyDown={(e) => handleTabKeyDown(e, index)}
                   className={`flex-1 flex flex-col items-center justify-center py-2 px-2 rounded-xl text-xs font-medium transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 min-h-[46px] ${
                     isSelected
-                      ? "text-blue-600 dark:text-blue-400 bg-blue-50/80 dark:bg-blue-950/70 shadow-sm"
-                      : "text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800/60"
+                      ? "text-blue-600 dark:text-accent-blue bg-surface-pill shadow-sm"
+                      : "text-text-muted hover:text-text-primary hover:bg-surface-pill-hover"
                   }`}
                 >
                   <Icon className="w-4 h-4 mb-1" />
