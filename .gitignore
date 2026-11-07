@@ -39,3 +39,7 @@ Thumbs.db
 .vscode/
 *.swp
 *~
+
+#files
+Research_Assistant_Use_Case.pdf
+SPEC.md
