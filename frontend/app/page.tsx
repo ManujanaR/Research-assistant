@@ -5,6 +5,7 @@ import { BookOpen, MessageSquare, Sparkles } from "lucide-react";
 import { SourcePanel } from "@/components/SourcePanel";
 import { StudioPanel } from "@/components/StudioPanel";
 import { ChatPanel } from "@/components/ChatPanel";
+import { PrintReport, PrintReportMessage } from "@/components/PrintReport";
 import {
   ApiError,
   SummaryResponse,
@@ -31,6 +32,7 @@ export default function Home() {
   const [summary, setSummary] = useState<SummaryResponse | null>(null);
   const [isSummaryLoading, setIsSummaryLoading] = useState(false);
   const [summaryError, setSummaryError] = useState<string | null>(null);
+  const [messages] = useState<PrintReportMessage[]>([]);
 
   // Desktop summary panel adjustable width (default 380px, min 280px, max 700px)
   const [summaryWidth, setSummaryWidth] = useState(380);
@@ -112,6 +114,12 @@ export default function Home() {
 
   return (
     <div className="w-full h-full flex flex-col flex-1 min-h-0 overflow-hidden bg-bg-base text-text-primary transition-colors duration-150">
+      <PrintReport
+        summary={summary}
+        messages={messages}
+        filename={uploadResult?.filename}
+      />
+
       {/* Desktop: Three columns (hidden on mobile, flex on lg and above) */}
       <div
         data-testid="desktop-workspace"

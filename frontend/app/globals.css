@@ -77,3 +77,51 @@ body {
 .pb-safe {
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }
+
+/* Print styles: hide the app shell, display only the print document on light page with black text and margins */
+@media print {
+  @page {
+    margin: 20mm 15mm;
+    size: auto;
+  }
+
+  html,
+  body,
+  main,
+  main > div {
+    overflow: visible !important;
+    height: auto !important;
+    min-height: 0 !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+  }
+
+  body > header,
+  body > nav,
+  aside,
+  [data-testid="desktop-workspace"],
+  [data-testid="mobile-workspace"],
+  [data-testid="mobile-nav"],
+  .no-print {
+    display: none !important;
+  }
+
+  main > div > div:not(.print-report-document) {
+    display: none !important;
+  }
+
+  .print-report-document {
+    display: block !important;
+    visibility: visible !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  .print-report-document header,
+  .print-report-document section,
+  .print-report-document footer {
+    display: block !important;
+  }
+}

@@ -15,6 +15,7 @@ import { SourceCard } from "./SourceCard";
 import { SourcePanel } from "./SourcePanel";
 import { StudioPanel } from "./StudioPanel";
 import { ChatPanel } from "./ChatPanel";
+import { PrintReport } from "./PrintReport";
 import { ThemeToggle } from "./ThemeToggle";
 import Home from "@/app/page";
 import {
@@ -726,6 +727,109 @@ describe("Frontend UI Components", () => {
 
       expect(document.documentElement.classList.contains("dark")).toBe(false);
       expect(localStorage.getItem("theme")).toBe("light");
+    });
+  });
+
+  describe("PrintReport", () => {
+    const mockSummary: SummaryResponse = {
+      title_authors_abstract: "Attention Mechanism Title",
+      problem_statement: "Attention Problem Statement",
+      methodology: "Attention Methodology",
+      key_results: "Attention Key Results",
+      conclusion: "Attention Conclusion",
+    };
+
+    beforeEach(() => {
+      window.print = vi.fn();
+    });
+
+    it("disabled, with the visible reason, when there is no summary", () => {
+      render(<PrintReport summary={null} messages={[]} />);
+      const btn = screen.getByRole("button", { name: /print report/i }) as HTMLButtonElement;
+      expect(btn.disabled).toBe(true);
+      expect(screen.getByText("Upload a paper first.")).toBeDefined();
+    });
+
+    it("enabled after a summary loads", () => {
+      render(<PrintReport summary={mockSummary} messages={[]} />);
+      const btn = screen.getByRole("button", { name: /print report/i }) as HTMLButtonElement;
+      expect(btn.disabled).toBe(false);
+      expect(screen.queryByText("Upload a paper first.")).toBeNull();
+    });
+
+    it("clicking calls window.print once and date is not rendered before a click", () => {
+      render(<PrintReport summary={mockSummary} messages={[]} />);
+      expect(screen.queryByText(/Generated/i)).toBeNull();
+
+      const btn = screen.getByRole("button", { name: /print report/i });
+      fireEvent.click(btn);
+
+      expect(window.print).toHaveBeenCalledTimes(1);
+      expect(screen.getByText(/Generated/i)).toBeDefined();
+    });
+
+    it("the print document has the five section headings in order, followed by the conversation", () => {
+      const messages = [
+        { role: "user" as const, content: "What is the problem?" },
+        { role: "assistant" as const, content: "The problem is latency." },
+      ];
+      render(
+        <PrintReport
+          summary={mockSummary}
+          messages={messages}
+          filename="test-paper.pdf"
+        />
+      );
+
+      const doc = document.querySelector("#print-report-document");
+      expect(doc).toBeDefined();
+      const text = doc?.textContent || "";
+
+      const idx1 = text.indexOf("Title, Authors & Abstract");
+      const idx2 = text.indexOf("Problem Statement");
+      const idx3 = text.indexOf("Methodology");
+      const idx4 = text.indexOf("Key Results");
+      const idx5 = text.indexOf("Conclusion");
+      const idxConv = text.indexOf("Conversation");
+
+      expect(idx1).toBeGreaterThan(-1);
+      expect(idx2).toBeGreaterThan(idx1);
+      expect(idx3).toBeGreaterThan(idx2);
+      expect(idx4).toBeGreaterThan(idx3);
+      expect(idx5).toBeGreaterThan(idx4);
+      expect(idxConv).toBeGreaterThan(idx5);
+    });
+
+    it("with no messages, the Conversation section is absent", () => {
+      render(<PrintReport summary={mockSummary} messages={[]} />);
+      const doc = document.querySelector("#print-report-document");
+      expect(doc?.textContent).not.toContain("Conversation");
+    });
+
+    it("an answer with two sources shows both page numbers, and the footer disclaimer is present", () => {
+      const messages = [
+        { role: "user" as const, content: "Explain baseline comparison" },
+        {
+          role: "assistant" as const,
+          content: "The baseline was compared to previous models.",
+          sources: [
+            { page_number: 3, snippet: "RNN baseline snippet" },
+            { page_number: 9, snippet: "CNN baseline snippet" },
+          ],
+        },
+      ];
+      render(<PrintReport summary={mockSummary} messages={messages} />);
+      const doc = document.querySelector("#print-report-document");
+      const text = doc?.textContent || "";
+
+      expect(text).toContain("Page 3");
+      expect(text).toContain("Page 9");
+      expect(text).toContain("Retrieved passages");
+      expect(
+        text
+      ).toContain(
+        "Answers are grounded in retrieved passages of the uploaded paper. Verify against the source."
+      );
     });
   });
 });
