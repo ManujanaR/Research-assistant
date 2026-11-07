@@ -81,11 +81,51 @@ From the repository root:
 cd backend
 pip install -r requirements.txt
 cp .env.example .env
-# Edit .env and supply your OPENAI_API_KEY
+# Edit .env and supply your API key and provider configuration
 uvicorn app.main:app --reload --port 8000
 ```
 
 Verify backend health at [http://localhost:8000/health](http://localhost:8000/health) (`{"status":"ok"}`).
+
+### Environment Variables
+
+Configure backend settings in `backend/.env`:
+
+| Variable | Default | Description |
+| :--- | :--- | :--- |
+| `LLM_PROVIDER` | `openai` | LLM provider backend (`openai`). |
+| `OPENAI_API_KEY` | `""` | API key for OpenAI or OpenAI-compatible provider. |
+| `OPENAI_BASE_URL` | `https://api.openai.com/v1` | Base URL for the OpenAI-compatible API endpoint. |
+| `MODEL_NAME` | `gpt-4o` | Chat & summarization model name. |
+| `EMBEDDING_MODEL` | `text-embedding-3-small` | Vector embedding model name. |
+| `MAX_UPLOAD_MB` | `20` | Maximum allowed PDF file size in megabytes. |
+| `CORS_ORIGINS` | `http://localhost:3000` | Comma-separated allowed origins. |
+| `SUMMARY_CACHE_DIR` | `.cache/summaries` | Directory for disk-persisted summaries. |
+| `CHROMA_DIR` | `.chroma` | Directory for persistent ChromaDB storage. |
+
+#### Provider Configuration Examples
+
+##### Direct OpenAI (Default)
+
+```env
+LLM_PROVIDER=openai
+OPENAI_API_KEY=sk-...
+OPENAI_BASE_URL=https://api.openai.com/v1
+MODEL_NAME=gpt-4o
+EMBEDDING_MODEL=text-embedding-3-small
+```
+
+##### OpenRouter (OpenAI-Compatible)
+
+```env
+LLM_PROVIDER=openai
+OPENAI_API_KEY=sk-or-v1-...
+OPENAI_BASE_URL=https://openrouter.ai/api/v1
+MODEL_NAME=openai/gpt-4o
+EMBEDDING_MODEL=openai/text-embedding-3-small
+```
+
+> **Note**: OpenRouter requires an active OpenRouter API key and credits on your OpenRouter account.
 
 ### 2. Frontend Setup
 

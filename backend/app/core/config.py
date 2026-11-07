@@ -19,7 +19,13 @@ class Settings(BaseSettings):
         alias="LLM_PROVIDER",
     )
     openai_api_key: str = Field(default="", alias="OPENAI_API_KEY")
+    openai_base_url: str = Field(
+        default="https://api.openai.com/v1", alias="OPENAI_BASE_URL"
+    )
     model_name: str = Field(default="gpt-4o", alias="MODEL_NAME")
+    embedding_model: str = Field(
+        default="text-embedding-3-small", alias="EMBEDDING_MODEL"
+    )
     max_upload_mb: int = Field(default=20, gt=0, alias="MAX_UPLOAD_MB")
     cors_origins: str = Field(default="http://localhost:3000", alias="CORS_ORIGINS")
     summary_cache_dir: str = Field(

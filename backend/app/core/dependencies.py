@@ -37,16 +37,25 @@ def get_paper_text_store(
     return _paper_text_store
 
 
+def create_async_openai_client() -> Any:
+    """Build an AsyncOpenAI client configured with openai_api_key and openai_base_url."""
+    settings = get_settings()
+    from openai import AsyncOpenAI
+
+    return AsyncOpenAI(
+        api_key=settings.openai_api_key,
+        base_url=settings.openai_base_url,
+    )
+
+
 def get_embedding_function() -> EmbedFn:
-    """Return the OpenAI async embedding function using text-embedding-3-small."""
+    """Return the OpenAI async embedding function using configured embedding_model."""
     settings = get_settings()
 
     async def _embed(texts: list[str]) -> list[list[float]]:
-        from openai import AsyncOpenAI
-
-        client = AsyncOpenAI(api_key=settings.openai_api_key)
+        client = create_async_openai_client()
         response = await client.embeddings.create(
-            model="text-embedding-3-small",
+            model=settings.embedding_model,
             input=texts,
         )
         return [item.embedding for item in response.data]
@@ -56,12 +65,9 @@ def get_embedding_function() -> EmbedFn:
 
 def get_llm_client() -> Any:
     """Build the OpenAI async client from OPENAI_API_KEY only when called."""
-    settings = get_settings()
-    from openai import AsyncOpenAI
-
-    return AsyncOpenAI(api_key=settings.openai_api_key)
+    return create_async_openai_client()
 
 
 def get_chat_llm_client() -> Any:
     """Build the OpenAI async client for chat from OPENAI_API_KEY only when called."""
-    return get_llm_client()
+    return create_async_openai_client()
