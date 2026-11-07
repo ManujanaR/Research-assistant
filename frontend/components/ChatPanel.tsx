@@ -11,6 +11,7 @@ import {
   ChevronDown,
   ChevronUp,
   BookOpen,
+  Sparkles,
 } from "lucide-react";
 import { ChatMessage, ChatSource, streamChat } from "@/lib/api";
 
@@ -159,16 +160,16 @@ export function ChatPanel({ docHash }: ChatPanelProps) {
   return (
     <div
       data-testid="chat-panel"
-      className="flex flex-col h-full border border-slate-200 dark:border-slate-800 rounded-xl bg-white dark:bg-slate-900 shadow-sm overflow-hidden transition-colors duration-150"
+      className="flex flex-col h-full border border-border-subtle rounded-2xl bg-surface-panel shadow-sm overflow-hidden transition-colors duration-150"
     >
       {/* Header */}
-      <div className="px-4 sm:px-5 py-3 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-slate-50/50 dark:bg-slate-900/60 flex-shrink-0">
-        <h2 className="text-sm font-semibold text-slate-800 dark:text-slate-100 flex items-center gap-2">
-          <Bot className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+      <div className="px-4 sm:px-5 py-3 border-b border-border-subtle flex items-center justify-between bg-surface-panel flex-shrink-0">
+        <h2 className="text-sm font-semibold text-text-primary flex items-center gap-2">
+          <Bot className="w-4 h-4 text-blue-600 dark:text-accent-blue" />
           Paper Q&A Chat
         </h2>
         {isStreaming && (
-          <span className="flex items-center gap-1.5 text-xs text-blue-600 dark:text-blue-400 font-medium">
+          <span className="flex items-center gap-1.5 text-xs text-blue-600 dark:text-accent-blue font-medium">
             <Loader2 className="w-3.5 h-3.5 animate-spin" />
             Generating response...
           </span>
@@ -176,17 +177,20 @@ export function ChatPanel({ docHash }: ChatPanelProps) {
       </div>
 
       {/* Message List */}
-      <div className="flex-1 p-3.5 sm:p-5 overflow-y-auto space-y-4 min-h-0">
+      <div className="flex-1 p-3.5 sm:p-5 overflow-y-auto space-y-4 min-h-0 bg-bg-base/40">
         {messages.length === 0 ? (
           <div
             data-testid="chat-empty-state"
-            className="flex flex-col items-center justify-center h-full text-center text-slate-400 dark:text-slate-500 p-6 sm:p-8"
+            className="flex flex-col items-center justify-center h-full text-center text-text-muted p-6 sm:p-8"
           >
-            <Bot className="w-10 h-10 mb-2 text-slate-300 dark:text-slate-600" />
-            <p className="text-sm font-medium text-slate-600 dark:text-slate-300">
+            <div className="text-4xl mb-3">👋</div>
+            <h3 className="text-lg font-semibold text-text-primary mb-1">
+              Let&apos;s start your Research...
+            </h3>
+            <p className="text-sm font-medium text-text-secondary">
               Ask a question about the paper.
             </p>
-            <p className="text-xs text-slate-400 dark:text-slate-500 mt-1 max-w-xs">
+            <p className="text-xs text-text-muted mt-1 max-w-xs">
               Answers are grounded strictly in the uploaded document with page
               citations.
             </p>
@@ -210,12 +214,12 @@ export function ChatPanel({ docHash }: ChatPanelProps) {
                 <div
                   className={`flex gap-2.5 max-w-[90%] sm:max-w-[85%] ${
                     msg.role === "user"
-                      ? "bg-blue-600 dark:bg-blue-600 text-white rounded-2xl rounded-tr-sm px-4 py-2.5 shadow-sm"
-                      : "bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-100 rounded-2xl rounded-tl-sm px-4 py-2.5"
+                      ? "bg-blue-600 text-white rounded-2xl rounded-tr-sm px-4 py-2.5 shadow-sm"
+                      : "bg-surface-elevated text-text-primary border border-border-subtle rounded-2xl rounded-tl-sm px-4 py-2.5 shadow-sm"
                   }`}
                 >
                   {msg.role === "assistant" && (
-                    <Bot className="w-4 h-4 text-slate-500 dark:text-slate-400 mt-0.5 flex-shrink-0" />
+                    <Bot className="w-4 h-4 text-text-secondary mt-0.5 flex-shrink-0" />
                   )}
                   {msg.role === "user" && (
                     <User className="w-4 h-4 text-blue-200 mt-0.5 flex-shrink-0" />
@@ -239,10 +243,10 @@ export function ChatPanel({ docHash }: ChatPanelProps) {
                               onClick={() => toggleSource(msg.id, idx)}
                               aria-label={`Citation [${num}]`}
                               aria-expanded={isExpanded}
-                              className={`inline-flex items-center justify-center px-1.5 py-0.2 text-[11px] font-bold rounded transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-blue-500 ${
+                              className={`inline-flex items-center justify-center px-1.5 py-0.2 text-[11px] font-bold rounded transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-accent-blue ${
                                 isExpanded
-                                  ? "bg-blue-600 text-white dark:bg-blue-500"
-                                  : "bg-blue-100 dark:bg-blue-950/80 text-blue-800 dark:text-blue-300 hover:bg-blue-200 dark:hover:bg-blue-900/80 border border-blue-200/50 dark:border-blue-800/60"
+                                  ? "bg-blue-600 text-white dark:bg-accent-blue dark:text-black"
+                                  : "bg-surface-pill text-blue-700 dark:text-accent-blue hover:bg-surface-pill-hover border border-border-subtle"
                               }`}
                             >
                               [{num}]
@@ -260,7 +264,7 @@ export function ChatPanel({ docHash }: ChatPanelProps) {
                     data-testid="message-sources"
                     className="w-full max-w-[90%] sm:max-w-[85%] mt-1 space-y-2 pl-3 sm:pl-4"
                   >
-                    <p className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                    <p className="text-[11px] font-semibold text-text-secondary uppercase tracking-wider">
                       Citations ({msgSources.length})
                     </p>
                     {msgSources.map((source, idx) => {
@@ -270,7 +274,7 @@ export function ChatPanel({ docHash }: ChatPanelProps) {
                         <div
                           key={idx}
                           data-testid={`source-card-${num}`}
-                          className="border border-slate-200 dark:border-slate-800 rounded-lg p-2.5 bg-white dark:bg-slate-900 text-xs shadow-sm transition-colors"
+                          className="border border-border-subtle rounded-xl p-2.5 bg-surface-panel text-xs shadow-sm transition-colors"
                         >
                           <div className="flex items-center justify-between gap-2">
                             <div className="flex items-center gap-2">
@@ -279,18 +283,18 @@ export function ChatPanel({ docHash }: ChatPanelProps) {
                                 onClick={() => toggleSource(msg.id, idx)}
                                 aria-expanded={isExpanded}
                                 aria-label={`Toggle source [${num}]`}
-                                className="font-bold text-blue-700 dark:text-blue-400 hover:text-blue-900 dark:hover:text-blue-300 focus:outline-none focus-visible:ring-1 focus-visible:ring-blue-500 rounded"
+                                className="font-bold text-blue-600 dark:text-accent-blue hover:underline focus:outline-none focus-visible:ring-1 focus-visible:ring-accent-blue rounded"
                               >
                                 [{num}]
                               </button>
-                              <BookOpen className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500" />
-                              <span className="font-medium text-slate-700 dark:text-slate-300">
+                              <BookOpen className="w-3.5 h-3.5 text-text-muted" />
+                              <span className="font-medium text-text-primary">
                                 Source
                               </span>
                               {source.page_number !== null && (
                                 <span
                                   data-testid="page-badge"
-                                  className="px-1.5 py-0.5 text-[10px] font-semibold bg-blue-100 dark:bg-blue-950/80 text-blue-800 dark:text-blue-300 border border-blue-200 dark:border-blue-800/80 rounded"
+                                  className="px-2 py-0.5 text-[10px] font-semibold bg-surface-pill text-blue-700 dark:text-accent-blue border border-border-subtle rounded-full"
                                 >
                                   Page {source.page_number}
                                 </span>
@@ -301,7 +305,7 @@ export function ChatPanel({ docHash }: ChatPanelProps) {
                               type="button"
                               onClick={() => toggleSource(msg.id, idx)}
                               aria-expanded={isExpanded}
-                              className="flex items-center gap-1 text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200 font-medium transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-blue-500 rounded p-1"
+                              className="flex items-center gap-1 text-text-secondary hover:text-text-primary font-medium transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-accent-blue rounded p-1"
                             >
                               <span>
                                 {isExpanded ? "Hide passage" : "Show passage"}
@@ -318,9 +322,9 @@ export function ChatPanel({ docHash }: ChatPanelProps) {
                           {isExpanded && (
                             <div
                               data-testid="source-passage"
-                              className="mt-2.5 pl-3 py-1.5 border-l-2 border-blue-500 bg-slate-50/70 dark:bg-slate-800/60 text-slate-700 dark:text-slate-300 whitespace-pre-wrap leading-relaxed text-xs rounded-r"
+                              className="mt-2.5 pl-3 py-1.5 border-l-2 border-blue-600 dark:border-accent-blue bg-surface-elevated text-text-secondary whitespace-pre-wrap leading-relaxed text-xs rounded-r"
                             >
-                              <div className="text-[10px] font-semibold text-slate-500 dark:text-slate-400 mb-1">
+                              <div className="text-[10px] font-semibold text-text-muted mb-1">
                                 {source.page_number !== null
                                   ? `Passage from Page ${source.page_number}:`
                                   : "Passage:"}
@@ -343,7 +347,7 @@ export function ChatPanel({ docHash }: ChatPanelProps) {
           <div
             role="alert"
             data-testid="chat-error"
-            className="flex items-start gap-2.5 p-3.5 text-xs text-red-700 dark:text-red-300 bg-red-50 dark:bg-red-950/50 border border-red-200 dark:border-red-900/70 rounded-xl"
+            className="flex items-start gap-2.5 p-3.5 text-xs text-red-700 dark:text-red-300 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900/60 rounded-xl"
           >
             <AlertCircle className="w-4 h-4 flex-shrink-0 text-red-600 dark:text-red-400 mt-0.5" />
             <div className="flex-1">
@@ -361,7 +365,7 @@ export function ChatPanel({ docHash }: ChatPanelProps) {
       {/* Input area */}
       <form
         onSubmit={handleSubmit}
-        className="p-3 sm:p-4 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/60 flex-shrink-0"
+        className="p-3 sm:p-4 border-t border-border-subtle bg-surface-panel flex-shrink-0"
       >
         <div className="relative flex items-end gap-2">
           <textarea
@@ -381,7 +385,7 @@ export function ChatPanel({ docHash }: ChatPanelProps) {
             disabled={isStreaming}
             maxLength={2000}
             rows={2}
-            className="flex-1 resize-none rounded-xl border border-slate-200 dark:border-slate-700 p-3 text-base sm:text-sm focus:border-blue-500 dark:focus:border-blue-400 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:focus:ring-blue-400 disabled:bg-slate-100 dark:disabled:bg-slate-800 disabled:text-slate-400 dark:disabled:text-slate-500 placeholder:text-slate-400 dark:placeholder:text-slate-500 bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100"
+            className="flex-1 resize-none rounded-2xl border border-border-subtle p-3 text-base sm:text-sm focus:border-accent-blue focus:outline-none focus:ring-1 focus:ring-accent-blue disabled:bg-surface-elevated disabled:text-text-muted placeholder:text-text-muted bg-surface-panel text-text-primary shadow-sm"
           />
 
           {isStreaming ? (
@@ -389,7 +393,7 @@ export function ChatPanel({ docHash }: ChatPanelProps) {
               type="button"
               onClick={handleStop}
               aria-label="Stop generation"
-              className="p-3 bg-red-600 hover:bg-red-700 dark:bg-red-600 dark:hover:bg-red-500 text-white rounded-xl transition-colors focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-1 dark:focus:ring-offset-slate-900 flex items-center justify-center flex-shrink-0 min-h-[44px] min-w-[44px]"
+              className="p-3 bg-red-600 hover:bg-red-700 text-white rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-1 flex items-center justify-center flex-shrink-0 min-h-[44px] min-w-[44px] shadow-sm"
             >
               <Square className="w-4 h-4 fill-current" />
             </button>
@@ -398,17 +402,25 @@ export function ChatPanel({ docHash }: ChatPanelProps) {
               type="submit"
               disabled={isStreaming || !input.trim()}
               aria-label="Send message"
-              className="p-3 bg-blue-600 hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-500 disabled:opacity-50 disabled:hover:bg-blue-600 dark:disabled:hover:bg-blue-600 text-white rounded-xl transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 dark:focus:ring-offset-slate-900 flex items-center justify-center flex-shrink-0 min-h-[44px] min-w-[44px]"
+              className="p-3 bg-blue-600 hover:bg-blue-700 dark:bg-accent-blue dark:hover:bg-blue-400 dark:text-black disabled:opacity-50 disabled:hover:bg-blue-600 dark:disabled:hover:bg-accent-blue text-white rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 flex items-center justify-center flex-shrink-0 min-h-[44px] min-w-[44px] shadow-sm"
             >
               <Send className="w-4 h-4" />
             </button>
           )}
         </div>
-        <div className="flex justify-between items-center mt-2 px-1 text-[11px] text-slate-400 dark:text-slate-500">
-          <span className="truncate mr-2">
-            Answers are strictly grounded in document text
-          </span>
-          <span className="flex-shrink-0">{input.length}/2000</span>
+        <div className="flex justify-between items-center mt-2.5 px-1 text-[11px] text-text-muted">
+          <div className="flex items-center gap-2 truncate mr-2">
+            {docHash ? (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-surface-pill border border-border-subtle text-text-secondary font-medium">
+                <Sparkles className="w-3 h-3 text-accent-blue" />
+                1 document indexed
+              </span>
+            ) : null}
+            <span className="truncate">
+              Strictly Depend on Uploaded PDF
+            </span>
+          </div>
+          <span className="flex-shrink-0 font-mono">{input.length}/2000</span>
         </div>
       </form>
     </div>
