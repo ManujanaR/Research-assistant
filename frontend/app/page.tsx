@@ -1,7 +1,9 @@
 "use client";
 
-import React, { useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { BookOpen, MessageSquare, Sparkles } from "lucide-react";
+import { AuthPanel } from "@/components/AuthPanel";
+import { SignOutButton } from "@/components/SignOutButton";
 import { SourcePanel } from "@/components/SourcePanel";
 import { StudioPanel } from "@/components/StudioPanel";
 import { ChatPanel } from "@/components/ChatPanel";
@@ -10,6 +12,8 @@ import {
   ApiError,
   SummaryResponse,
   UploadResponse,
+  UserResponse,
+  getMe,
   getSummary,
 } from "@/lib/api";
 
@@ -28,6 +32,9 @@ const MOBILE_TABS: readonly TabItem[] = [
 ] as const;
 
 export default function Home() {
+  const [currentUser, setCurrentUser] = useState<UserResponse | null>(null);
+  const [isCheckingSession, setIsCheckingSession] = useState(true);
+
   const [uploadResult, setUploadResult] = useState<UploadResponse | null>(null);
   const [summary, setSummary] = useState<SummaryResponse | null>(null);
   const [isSummaryLoading, setIsSummaryLoading] = useState(false);
@@ -65,6 +72,32 @@ export default function Home() {
   const [activeTab, setActiveTab] = useState<MobileTab>("chat");
   const tabRefs = useRef<(HTMLButtonElement | null)[]>([]);
 
+  useEffect(() => {
+    let isMounted = true;
+    async function checkSession() {
+      try {
+        const user = await getMe();
+        if (isMounted) {
+          setCurrentUser(user);
+        }
+      } catch {
+        if (isMounted) {
+          setCurrentUser(null);
+        }
+      } finally {
+        if (isMounted) {
+          setIsCheckingSession(false);
+        }
+      }
+    }
+
+    checkSession();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
   const handleUploaded = async (result: UploadResponse) => {
     setUploadResult(result);
     setIsSummaryLoading(true);
@@ -95,6 +128,16 @@ export default function Home() {
     setActiveTab("chat");
   };
 
+  const handleSignOut = () => {
+    setCurrentUser(null);
+    handleReset();
+  };
+
+  const handleAuthSuccess = (user: UserResponse) => {
+    setCurrentUser(user);
+    handleReset();
+  };
+
   const handleTabKeyDown = (
     e: React.KeyboardEvent<HTMLButtonElement>,
     index: number
@@ -112,8 +155,41 @@ export default function Home() {
     }
   };
 
+  // 1. Startup screen while checking session
+  if (isCheckingSession) {
+    return (
+      <div
+        data-testid="startup-screen"
+        className="w-full h-full flex flex-1 flex-col items-center justify-center bg-bg-base text-text-primary p-6 transition-colors"
+      >
+        <div className="flex flex-col items-center gap-4">
+          <div className="flex items-center gap-2 select-none">
+            <span className="text-3xl font-bold tracking-tight text-blue-600 dark:text-accent-blue">
+              Research
+            </span>
+            <span className="text-3xl font-medium text-slate-700 dark:text-text-primary">
+              Assistant
+            </span>
+          </div>
+          <div className="flex items-center gap-2.5 text-text-secondary text-sm">
+            <div className="w-4 h-4 border-2 border-blue-600 dark:border-accent-blue border-t-transparent rounded-full animate-spin" />
+            <span>Loading...</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // 2. Unauthenticated: AuthPanel
+  if (!currentUser) {
+    return <AuthPanel onSuccess={handleAuthSuccess} />;
+  }
+
+  // 3. Authenticated: Workspace
   return (
     <div className="w-full h-full flex flex-col flex-1 min-h-0 overflow-hidden bg-bg-base text-text-primary transition-colors duration-150">
+      <SignOutButton email={currentUser.email} onSignOut={handleSignOut} />
+
       <PrintReport
         summary={summary}
         messages={messages}
