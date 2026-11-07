@@ -6,6 +6,7 @@ import {
   fireEvent,
   waitFor,
   cleanup,
+  within,
 } from "@testing-library/react";
 
 import { UploadZone } from "./UploadZone";
@@ -622,8 +623,9 @@ describe("Frontend UI Components", () => {
         expect(screen.getByTestId("desktop-studio-panel")).toBeDefined();
       });
 
-      // Mobile tab bar should not be in the document
-      expect(screen.queryByRole("tablist")).toBeNull();
+      // Mobile tab bar should not be in the desktop workspace container
+      const desktopWorkspace = screen.getByTestId("desktop-workspace");
+      expect(within(desktopWorkspace).queryByRole("tablist")).toBeNull();
     });
 
     it("mobile tab bar renders three tabs, and selecting Studio shows the summary", async () => {
@@ -657,10 +659,11 @@ describe("Frontend UI Components", () => {
       fireEvent.click(tabs[2]);
       expect(tabs[2].getAttribute("aria-selected")).toBe("true");
 
-      // Summary should now be visible in Studio view
+      // Summary should now be visible in Studio view scoped to mobile workspace
       await waitFor(() => {
-        expect(screen.getByTestId("studio-panel")).toBeDefined();
-        expect(screen.getByText("Attention Mechanism Title")).toBeDefined();
+        const mobileWorkspace = screen.getByTestId("mobile-workspace");
+        expect(within(mobileWorkspace).getByTestId("studio-panel")).toBeDefined();
+        expect(within(mobileWorkspace).getByText("Attention Mechanism Title")).toBeDefined();
       });
     });
 
