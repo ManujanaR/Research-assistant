@@ -5,11 +5,30 @@ import { ChevronDown, ChevronUp, BookOpen } from "lucide-react";
 import { ChatSource } from "@/lib/api";
 
 export interface SourceCardProps {
-  source: ChatSource;
+  source?: ChatSource;
+  sources?: ChatSource[];
 }
 
-export function SourceCard({ source }: SourceCardProps) {
+export function SourceCard({ source, sources }: SourceCardProps) {
   const [isExpanded, setIsExpanded] = useState(false);
+
+  // If a sources list is passed directly, do not render when empty
+  if (sources !== undefined) {
+    if (sources.length === 0) {
+      return null;
+    }
+    return (
+      <div data-testid="citation-block" className="space-y-2">
+        {sources.map((s, idx) => (
+          <SourceCard key={idx} source={s} />
+        ))}
+      </div>
+    );
+  }
+
+  if (!source) {
+    return null;
+  }
 
   return (
     <div className="border border-slate-200 rounded-lg p-3 bg-white text-xs shadow-sm">

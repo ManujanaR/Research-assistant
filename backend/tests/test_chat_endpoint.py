@@ -481,10 +481,10 @@ def test_chat_schema_extra_fields_forbidden() -> None:
 
 def test_extract_snippet_unit() -> None:
     """Unit tests for extract_snippet helper."""
-    # 2 sentences under 200
+    # Complete sentence under 200 (first complete sentence when no question)
     text_two = "Sentence one. Sentence two. Sentence three."
     s = extract_snippet(text_two)
-    assert s == "Sentence one. Sentence two."
+    assert s == "Sentence one."
     assert s in text_two
     assert len(s) <= 200
 
@@ -494,6 +494,86 @@ def test_extract_snippet_unit() -> None:
     assert len(s_long) <= 200
     assert s_long in long_text
     assert "..." not in s_long
+
+
+def test_extract_snippet_picks_best_matching_sentence() -> None:
+    """For a question about 'dataset', the snippet is the sentence containing 'dataset', not the opening sentence."""
+    chunk = (
+        "We introduce a novel transformer architecture for vision. "
+        "The pretraining dataset contains ten million samples. "
+        "Final evaluations show significant improvement."
+    )
+    snippet = extract_snippet(chunk, question="What dataset was used?")
+    assert snippet == "The pretraining dataset contains ten million samples."
+    assert snippet in chunk
+    assert len(snippet) <= 200
+
+
+def test_relevance_cutoff_drops_offtopic_and_keeps_ontopic(tmp_path: Path) -> None:
+    """Off-topic question sends empty sources array; on-topic question keeps its citations."""
+    doc_hash = "7" * 64
+    chroma_dir = tmp_path / "chroma_test"
+    chroma_client = chromadb.PersistentClient(path=str(chroma_dir))
+
+    class OrthogonalEmbedder:
+        async def __call__(self, texts: list[str]) -> list[list[float]]:
+            res = []
+            for t in texts:
+                lower = t.lower()
+                if "quantum" in lower:
+                    res.append([1.0, 0.0, 0.0, 0.0])
+                elif "cooking" in lower:
+                    res.append([0.0, 1.0, 0.0, 0.0])
+                else:
+                    res.append([0.0, 0.0, 1.0, 0.0])
+            return res
+
+    embedder = OrthogonalEmbedder()
+    asyncio.run(
+        index_document(
+            doc_hash=doc_hash,
+            chunks=[
+                {
+                    "text": "Quantum computing uses superposition and entanglement.",
+                    "page": 1,
+                }
+            ],
+            embed_fn=embedder,
+            client=chroma_client,
+        )
+    )
+
+    fake_client = FakeChatClient(
+        stream_factory=lambda **_: FakeChatStream(tokens=["Quantum", " response."])
+    )
+
+    app.dependency_overrides[get_chroma_client] = lambda: chroma_client
+    app.dependency_overrides[get_embedding_function] = lambda: embedder
+    app.dependency_overrides[get_chat_llm_client] = lambda: fake_client
+
+    try:
+        # On-topic question: 'quantum' matches chunk vector -> cosine dist = 0.0 <= 0.6
+        resp_on = client.post(
+            "/api/chat",
+            json={"doc_hash": doc_hash, "message": "Explain quantum computing"},
+        )
+        assert resp_on.status_code == 200
+        events_on = parse_sse_events(resp_on.text)
+        sources_on = next(e["data"] for e in events_on if e["event"] == "sources")
+        assert len(sources_on) == 1
+        assert sources_on[0]["page_number"] == 1
+
+        # Off-topic question: 'cooking' vector is orthogonal -> cosine dist = 1.0 > 0.6
+        resp_off = client.post(
+            "/api/chat",
+            json={"doc_hash": doc_hash, "message": "How do I start cooking soup?"},
+        )
+        assert resp_off.status_code == 200
+        events_off = parse_sse_events(resp_off.text)
+        sources_off = next(e["data"] for e in events_off if e["event"] == "sources")
+        assert sources_off == []
+    finally:
+        app.dependency_overrides.clear()
 
 
 def test_extract_sources_deduplication() -> None:

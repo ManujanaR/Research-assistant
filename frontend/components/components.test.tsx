@@ -233,6 +233,12 @@ describe("Frontend UI Components", () => {
       expect(toggleButton.getAttribute("aria-expanded")).toBe("false");
       expect(screen.queryByTestId("source-snippet")).toBeNull();
     });
+
+    it("an empty sources event renders no citation block", () => {
+      const { container } = render(<SourceCard sources={[]} />);
+      expect(container.firstChild).toBeNull();
+      expect(screen.queryByTestId("citation-block")).toBeNull();
+    });
   });
 
   describe("ChatPanel", () => {
@@ -365,6 +371,29 @@ describe("Frontend UI Components", () => {
       expect(passedSignal?.aborted).toBe(true);
       // Partial assistant message stays in document
       expect(screen.getByText("Starting generated text...")).toBeDefined();
+    });
+
+    it("an empty sources event renders no citation block in chat", async () => {
+      vi.mocked(streamChat).mockImplementation(async (_params, handlers) => {
+        handlers.onToken("The paper does not discuss this topic.");
+        handlers.onSources([]);
+        handlers.onDone();
+      });
+
+      render(<ChatPanel docHash={docHash} />);
+
+      const textarea = screen.getByPlaceholderText(/ask a question about this paper/i);
+      const sendButton = screen.getByRole("button", { name: /send message/i });
+
+      fireEvent.change(textarea, { target: { value: "Off-topic query" } });
+      fireEvent.click(sendButton);
+
+      await waitFor(() => {
+        expect(
+          screen.getByText("The paper does not discuss this topic.")
+        ).toBeDefined();
+        expect(screen.queryByTestId("message-sources")).toBeNull();
+      });
     });
   });
 });

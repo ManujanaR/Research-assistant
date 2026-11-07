@@ -106,41 +106,252 @@ def rebuild_text_from_chroma(
     return "\n\n".join(doc for _, doc in pairs if doc is not None)
 
 
-def extract_snippet(chunk_text: str, max_chars: int = 200) -> str:
-    """Extract a snippet of at most max_chars that is an exact substring of chunk_text.
+STOP_WORDS = {
+    "a",
+    "about",
+    "above",
+    "after",
+    "again",
+    "against",
+    "all",
+    "am",
+    "an",
+    "and",
+    "any",
+    "are",
+    "aren't",
+    "as",
+    "at",
+    "be",
+    "because",
+    "been",
+    "before",
+    "being",
+    "below",
+    "between",
+    "both",
+    "but",
+    "by",
+    "can",
+    "can't",
+    "cannot",
+    "could",
+    "couldn't",
+    "did",
+    "didn't",
+    "do",
+    "does",
+    "doesn't",
+    "doing",
+    "don't",
+    "down",
+    "during",
+    "each",
+    "few",
+    "for",
+    "from",
+    "further",
+    "had",
+    "hadn't",
+    "has",
+    "hasn't",
+    "have",
+    "haven't",
+    "having",
+    "he",
+    "he'd",
+    "he'll",
+    "he's",
+    "her",
+    "here",
+    "here's",
+    "hers",
+    "herself",
+    "him",
+    "himself",
+    "his",
+    "how",
+    "how's",
+    "i",
+    "i'd",
+    "i'll",
+    "i'm",
+    "i've",
+    "if",
+    "in",
+    "into",
+    "is",
+    "isn't",
+    "it",
+    "it's",
+    "its",
+    "itself",
+    "let's",
+    "me",
+    "more",
+    "most",
+    "mustn't",
+    "my",
+    "myself",
+    "no",
+    "nor",
+    "not",
+    "of",
+    "off",
+    "on",
+    "once",
+    "only",
+    "or",
+    "other",
+    "ought",
+    "our",
+    "ours",
+    "ourselves",
+    "out",
+    "over",
+    "own",
+    "same",
+    "shan't",
+    "she",
+    "she'd",
+    "she'll",
+    "she's",
+    "should",
+    "shouldn't",
+    "so",
+    "some",
+    "such",
+    "than",
+    "that",
+    "that's",
+    "the",
+    "their",
+    "theirs",
+    "them",
+    "themselves",
+    "then",
+    "there",
+    "there's",
+    "these",
+    "they",
+    "they'd",
+    "they'll",
+    "they're",
+    "they've",
+    "this",
+    "those",
+    "through",
+    "to",
+    "too",
+    "under",
+    "until",
+    "up",
+    "very",
+    "was",
+    "wasn't",
+    "we",
+    "we'd",
+    "we'll",
+    "we're",
+    "we've",
+    "were",
+    "weren't",
+    "what",
+    "what's",
+    "when",
+    "when's",
+    "where",
+    "where's",
+    "which",
+    "while",
+    "who",
+    "who's",
+    "whom",
+    "why",
+    "why's",
+    "with",
+    "won't",
+    "would",
+    "wouldn't",
+    "you",
+    "you'd",
+    "you'll",
+    "you're",
+    "you've",
+    "your",
+    "yours",
+    "yourself",
+    "yourselves",
+}
 
-    Takes the first one or two sentences. If over max_chars, cuts at a word boundary
-    at or before max_chars without internal ellipses.
+
+def _extract_chunk_sentences(chunk_text: str) -> list[str]:
+    """Extract complete sentences as exact substrings of chunk_text."""
+    if not chunk_text:
+        return []
+    pattern = r"(?:^|\s*)([^\s].*?[.!?])(?=\s|$)"
+    matches = list(re.finditer(pattern, chunk_text, flags=re.DOTALL))
+    if matches:
+        return [m.group(1).strip() for m in matches if m.group(1).strip()]
+    return [chunk_text.strip()] if chunk_text.strip() else []
+
+
+def extract_snippet(chunk_text: str, question: str = "", max_chars: int = 200) -> str:
+    """Pick the complete sentence sharing the most meaningful words with the question.
+
+    If no sentence shares a word, uses the first complete sentence.
+    A snippet is a complete sentence, at most max_chars, and an exact substring without ellipses.
     """
     if not chunk_text:
         return ""
 
-    matches = list(re.finditer(r"[.!?](?:\s|$)", chunk_text))
-    if len(matches) >= 2:
-        end_idx = matches[1].start() + 1
-        candidate = chunk_text[:end_idx]
-    elif len(matches) == 1:
-        end_idx = matches[0].start() + 1
-        candidate = chunk_text[:end_idx]
-    else:
-        candidate = chunk_text
+    sentences = _extract_chunk_sentences(chunk_text)
+    if not sentences:
+        return ""
 
-    if len(candidate) <= max_chars:
-        return candidate
+    q_words = {
+        w.lower()
+        for w in re.findall(r"\b\w+\b", question)
+        if w.lower() not in STOP_WORDS and len(w) > 1
+    }
 
-    cut = candidate[:max_chars]
-    last_ws = max(cut.rfind(" "), cut.rfind("\n"), cut.rfind("\t"))
-    if last_ws > 0:
-        return cut[:last_ws]
-    return cut
+    eligible = [s for s in sentences if len(s) <= max_chars]
+    if not eligible:
+        first = sentences[0]
+        if len(first) <= max_chars:
+            return first
+        cut = first[:max_chars]
+        last_ws = max(cut.rfind(" "), cut.rfind("\n"), cut.rfind("\t"))
+        return cut[:last_ws] if last_ws > 0 else cut
+
+    if q_words:
+        scored: list[tuple[int, int, str]] = []
+        for idx, sent in enumerate(eligible):
+            s_words = {
+                w.lower()
+                for w in re.findall(r"\b\w+\b", sent)
+                if w.lower() not in STOP_WORDS
+            }
+            overlap = len(q_words & s_words)
+            scored.append((-overlap, idx, sent))
+
+        scored.sort()
+        if scored[0][0] < 0:
+            return scored[0][2]
+
+    return eligible[0]
 
 
-def extract_sources(chunks: list[RetrievedChunk]) -> list[ChatSource]:
+def extract_sources(
+    chunks: list[RetrievedChunk], question: str = ""
+) -> list[ChatSource]:
     """Deduplicate sources by (page_number, snippet) preserving retrieval order."""
     sources: list[ChatSource] = []
     seen: set[tuple[int | None, str]] = set()
     for chunk in chunks:
-        snippet = extract_snippet(chunk.text)
+        snippet = extract_snippet(chunk.text, question=question)
+        if not snippet:
+            continue
         key = (chunk.page, snippet)
         if key not in seen:
             seen.add(key)
@@ -187,6 +398,7 @@ async def stream_chat_response(
             messages=messages,
             stream=True,
         )
+        full_answer = ""
         async for chunk in response_stream:
             delta = None
             if hasattr(chunk, "choices") and chunk.choices:
@@ -203,9 +415,15 @@ async def stream_chat_response(
                     delta = delta_obj.get("content")
 
             if delta:
+                full_answer += delta
                 yield f"event: token\ndata: {json.dumps({'text': delta})}\n\n"
 
-        sources_payload = [s.model_dump() for s in sources]
+        is_fallback = full_answer.strip() == FALLBACK_GROUNDING_MESSAGE.strip()
+        if not sources or is_fallback:
+            sources_payload: list[dict[str, Any]] = []
+        else:
+            sources_payload = [s.model_dump() for s in sources]
+
         yield f"event: sources\ndata: {json.dumps(sources_payload)}\n\n"
         yield f"event: done\ndata: {json.dumps({})}\n\n"
     except openai.AuthenticationError as exc:

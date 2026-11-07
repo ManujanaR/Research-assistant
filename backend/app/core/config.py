@@ -40,6 +40,9 @@ class Settings(BaseSettings):
         default="text-embedding-3-small", alias="EMBEDDING_MODEL"
     )
     max_upload_mb: int = Field(default=20, gt=0, alias="MAX_UPLOAD_MB")
+    citation_max_distance: float = Field(
+        default=0.6, gt=0.0, alias="CITATION_MAX_DISTANCE"
+    )
     cors_origins: str = Field(default="http://localhost:3000", alias="CORS_ORIGINS")
     summary_cache_dir: str = Field(
         default=".cache/summaries", alias="SUMMARY_CACHE_DIR"

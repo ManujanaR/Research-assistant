@@ -6,6 +6,7 @@ from chromadb.api import ClientAPI
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 
+from app.core.config import get_settings
 from app.core.dependencies import (
     get_chat_llm_client,
     get_chroma_client,
@@ -91,11 +92,15 @@ async def chat(
             detail=f"The AI provider returned an error (status {exc.status_code}). Check MODEL_NAME and EMBEDDING_MODEL in backend/.env.",
         ) from exc
 
-    sources = extract_sources(chunks)
+    settings = get_settings()
+    relevant_chunks = [
+        c for c in chunks if c.distance <= settings.citation_max_distance
+    ]
+    sources = extract_sources(relevant_chunks, question=request.message)
     messages = assemble_chat_messages(
         question=request.message,
         history=request.history,
-        chunks=chunks,
+        chunks=relevant_chunks,
     )
 
     return StreamingResponse(

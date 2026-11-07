@@ -79,6 +79,63 @@ def test_chunking_with_in_memory_two_page_pdf() -> None:
         assert "Page 2" in chunk["text"]
 
 
+def test_cleanup_repeated_headers_footers_and_glyphs() -> None:
+    """Verify that repeated headers, footers, bare page numbers, and glyph placeholders are removed."""
+    doc = pymupdf.open()
+    page1 = doc.new_page()
+    page1.insert_text(
+        (50, 50),
+        "International Journal of Computer Science\n\nIntroduction to artificial intelligence with glyph \u25a1 placeholder.\nSecond sentence on page 1.\n\n1",
+    )
+    page2 = doc.new_page()
+    page2.insert_text(
+        (50, 50),
+        "International Journal of Computer Science\n\nMethodology section discusses deep neural networks.\nSecond sentence on page 2.\n\n2",
+    )
+    pdf_bytes = doc.tobytes()
+    doc.close()
+
+    parsed = parse_pdf(pdf_bytes)
+    assert parsed.page_count == 2
+    full_text = " ".join(c["text"] for c in parsed.chunks)
+
+    # Repeated header removed
+    assert "International Journal of Computer Science" not in full_text
+    # Bare page numbers removed
+    assert not any(c["text"].strip() == "1" for c in parsed.chunks)
+    assert not any(c["text"].strip() == "2" for c in parsed.chunks)
+    # Glyph placeholder removed
+    assert "\u25a1" not in full_text
+    # Core content preserved
+    assert "Introduction to artificial intelligence" in full_text
+    assert "Methodology section discusses" in full_text
+
+
+def test_sentence_boundary_chunking_never_cuts_sentences() -> None:
+    """Verify that chunks split strictly on sentence boundaries without cutting sentences."""
+    sentences = [
+        f"Sentence number {i:02d} describes experimental results in full detail."
+        for i in range(25)
+    ]
+    page_content = "\n".join(sentences)
+
+    doc = pymupdf.open()
+    page = doc.new_page()
+    page.insert_textbox(page.rect, page_content)
+    pdf_bytes = doc.tobytes()
+    doc.close()
+
+    parsed = parse_pdf(pdf_bytes)
+    assert parsed.page_count == 1
+    assert len(parsed.chunks) > 1
+
+    for chunk in parsed.chunks:
+        text = chunk["text"].strip()
+        # Every chunk starts and ends on a complete sentence boundary
+        assert text.startswith("Sentence number ")
+        assert text.endswith("in full detail.")
+
+
 def test_sample_short_pdf_placeholder() -> None:
     """Placeholder test for sample_short.pdf to be supplied by user."""
     short_path = FIXTURES_DIR / "sample_short.pdf"

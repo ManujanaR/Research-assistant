@@ -1,4 +1,6 @@
 import logging
+import re
+from collections import Counter
 from typing import Any
 
 import pymupdf
@@ -7,6 +9,17 @@ from pydantic import BaseModel, Field
 logger = logging.getLogger(__name__)
 
 TARGET_CHUNK_SIZE = 800
+
+# Unicode private-use areas and missing-glyph characters:
+# U+25A1 ('□'), U+FFFD (''), BMP PUA (U+E000-U+F8FF), Plane 15 (U+F0000-U+FFFFD), Plane 16 (U+100000-U+10FFFD)
+GLYPH_CLEANUP_REGEX = re.compile(
+    r"[\u25a1\ufffd\ue000-\uf8ff\U000f0000-\U000ffffd\U00100000-\U0010fffd]"
+)
+
+# Sentence boundary regex avoiding common abbreviations and list numbers
+SENTENCE_SPLIT_REGEX = re.compile(
+    r"(?<!\bet al\.)(?<!e\.g\.)(?<!i\.e\.)(?<!\d\.)(?<=[.!?])\s+"
+)
 
 
 class PdfParseError(Exception):
@@ -24,53 +37,66 @@ class ParsedDocument(BaseModel):
     chunks: list[dict[str, Any]]
 
 
-def _chunk_page_text(page_text: str, page_number: int) -> list[dict[str, Any]]:
-    """Split a single page's text into roughly 800-character chunks along paragraph boundaries."""
-    paragraphs = [p.strip() for p in page_text.split("\n\n") if p.strip()]
+def _clean_glyphs(text: str) -> str:
+    """Replace private-use and missing-glyph characters with space and collapse repeated horizontal whitespace."""
+    cleaned = GLYPH_CLEANUP_REGEX.sub(" ", text)
+    return re.sub(r"[ \t]+", " ", cleaned)
+
+
+def _split_into_sentences(text: str) -> list[str]:
+    """Split text into complete sentences along sentence boundaries."""
+    if not text:
+        return []
+
+    paragraphs = [p.strip() for p in text.split("\n\n") if p.strip()]
     if not paragraphs:
-        paragraphs = [p.strip() for p in page_text.split("\n") if p.strip()]
-    if not paragraphs:
+        paragraphs = [text.strip()]
+
+    sentences: list[str] = []
+    for para in paragraphs:
+        para_norm = " ".join(line.strip() for line in para.splitlines() if line.strip())
+        if not para_norm:
+            continue
+        parts = [s.strip() for s in SENTENCE_SPLIT_REGEX.split(para_norm) if s.strip()]
+        if parts:
+            sentences.extend(parts)
+        else:
+            sentences.append(para_norm)
+
+    return sentences
+
+
+def _chunk_sentences(sentences: list[str], page_number: int) -> list[dict[str, Any]]:
+    """Split sentences into chunks along sentence boundaries around TARGET_CHUNK_SIZE."""
+    if not sentences:
         return []
 
     chunks: list[dict[str, Any]] = []
-    current_chunk_parts: list[str] = []
-    current_length = 0
+    current_sentences: list[str] = []
+    current_len = 0
 
-    for para in paragraphs:
-        if len(para) > TARGET_CHUNK_SIZE:
-            if current_chunk_parts:
-                chunks.append(
-                    {"text": "\n\n".join(current_chunk_parts), "page": page_number}
-                )
-                current_chunk_parts = []
-                current_length = 0
+    for sentence in sentences:
+        sent_len = len(sentence)
+        delimiter_len = 1 if current_sentences else 0
 
-            for i in range(0, len(para), TARGET_CHUNK_SIZE):
-                sub_para = para[i : i + TARGET_CHUNK_SIZE].strip()
-                if sub_para:
-                    chunks.append({"text": sub_para, "page": page_number})
-            continue
-
-        delimiter_len = 2 if current_chunk_parts else 0
-        if current_length + len(para) + delimiter_len > TARGET_CHUNK_SIZE:
-            if current_chunk_parts:
-                chunks.append(
-                    {"text": "\n\n".join(current_chunk_parts), "page": page_number}
-                )
-            current_chunk_parts = [para]
-            current_length = len(para)
+        if current_sentences and (
+            current_len + delimiter_len + sent_len > TARGET_CHUNK_SIZE
+        ):
+            chunks.append({"text": " ".join(current_sentences), "page": page_number})
+            current_sentences = [sentence]
+            current_len = sent_len
         else:
-            current_chunk_parts.append(para)
-            current_length += len(para) + delimiter_len
+            current_sentences.append(sentence)
+            current_len += delimiter_len + sent_len
 
-    if current_chunk_parts:
-        chunks.append({"text": "\n\n".join(current_chunk_parts), "page": page_number})
+    if current_sentences:
+        chunks.append({"text": " ".join(current_sentences), "page": page_number})
 
     return chunks
 
 
 def parse_pdf(pdf_bytes: bytes) -> ParsedDocument:
-    """Parse a PDF document from raw bytes into page-attributed text chunks.
+    """Parse a PDF document from raw bytes into cleaned, sentence-attributed text chunks.
 
     Raises:
         PdfParseError: If the document is corrupt or cannot be opened.
@@ -89,22 +115,68 @@ def parse_pdf(pdf_bytes: bytes) -> ParsedDocument:
                 "The uploaded PDF contains no extractable text. Scanned documents or image-only PDFs are not supported."
             )
 
-        all_chunks: list[dict[str, Any]] = []
-        total_extracted_text = ""
+        raw_pages_lines: list[list[str]] = []
+        total_extracted_len = 0
 
         for page_index in range(page_count):
             page = doc.load_page(page_index)
-            page_text = page.get_text()
-            total_extracted_text += page_text
+            raw_text = page.get_text()
+            total_extracted_len += len(raw_text.strip())
+            cleaned_text = _clean_glyphs(raw_text)
 
-            page_number = page_index + 1  # 1-indexed
-            page_chunks = _chunk_page_text(page_text, page_number)
-            all_chunks.extend(page_chunks)
+            # Lines for header/footer comparison
+            lines = [line.strip() for line in cleaned_text.splitlines() if line.strip()]
+            raw_pages_lines.append(lines)
 
-        if not total_extracted_text.strip():
+        if total_extracted_len == 0:
             logger.info(
                 "PDF contains 0 extractable text characters across %d pages", page_count
             )
+            raise NoExtractableTextError(
+                "The uploaded PDF contains no extractable text. Scanned documents or image-only PDFs are not supported."
+            )
+
+        # Detect repeated running headers and footers across pages
+        repeated_headers_footers: set[str] = set()
+        if page_count > 1:
+            candidate_counts: Counter[str] = Counter()
+            for lines in raw_pages_lines:
+                page_candidates: set[str] = set()
+                if len(lines) <= 4:
+                    page_candidates.update(lines)
+                else:
+                    page_candidates.update(lines[:2])
+                    page_candidates.update(lines[-2:])
+                for cand in page_candidates:
+                    candidate_counts[cand] += 1
+
+            repeated_headers_footers = {
+                cand
+                for cand, count in candidate_counts.items()
+                if count > (page_count / 2)
+            }
+
+        all_chunks: list[dict[str, Any]] = []
+
+        for page_index in range(page_count):
+            page_number = page_index + 1
+            lines = raw_pages_lines[page_index]
+
+            filtered_lines = [
+                line
+                for line in lines
+                if line not in repeated_headers_footers and not line.isdigit()
+            ]
+
+            if not filtered_lines:
+                continue
+
+            page_text = "\n".join(filtered_lines)
+            sentences = _split_into_sentences(page_text)
+            page_chunks = _chunk_sentences(sentences, page_number)
+            all_chunks.extend(page_chunks)
+
+        if not all_chunks:
             raise NoExtractableTextError(
                 "The uploaded PDF contains no extractable text. Scanned documents or image-only PDFs are not supported."
             )
