@@ -102,6 +102,7 @@ Configure backend settings in `backend/.env`:
 | `CORS_ORIGINS` | `http://localhost:3000` | Comma-separated allowed origins. |
 | `SUMMARY_CACHE_DIR` | `.cache/summaries` | Directory for disk-persisted summaries. |
 | `CHROMA_DIR` | `.chroma` | Directory for persistent ChromaDB storage. |
+| `CITATION_MAX_DISTANCE` | `0.6` | Maximum retrieval distance for citation relevance. |
 
 #### Provider Configuration Examples
 
@@ -126,6 +127,10 @@ EMBEDDING_MODEL=openai/text-embedding-3-small
 ```
 
 > **Note**: OpenRouter requires an active OpenRouter API key and credits on your OpenRouter account.
+
+#### Citation Threshold Calibration
+
+`CITATION_MAX_DISTANCE` is calibrated per embedding model. After changing `EMBEDDING_MODEL`, run `scripts/calibrate_citation_threshold.py` and update the threshold.
 
 ### 2. Frontend Setup
 
