@@ -173,3 +173,7 @@ npm run lint           # ESLint verification
 npx tsc --noEmit       # Strict TypeScript type check
 npm run build          # Production Next.js compilation
 ```
+
+## Known Limitations
+
+- **Citation Relevance Filtering**: The `CITATION_MAX_DISTANCE` threshold hides citation cards when the retrieval cosine distance is high (e.g. for completely off-topic questions). However, if the model responds conversationally to an off-topic query, and that query happens to retrieve a chunk with cosine distance below 0.6, citations will still appear alongside the reply. A more restrictive fix (such as enforcing a constrained output format or secondary grounding verification) will be evaluated in future iterations.
