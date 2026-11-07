@@ -1,35 +1,34 @@
 # Mitra Research Assistant
 
-A full-stack web application designed for researchers and engineers to upload research papers in PDF format, receive a structured 5-section summary, and ask natural-language questions through an interactive, grounded chat interface.
-
-> **Current Project Status**: Under active step-by-step construction. Commits 1a–1c (foundational repository scaffolding) are in place. Application endpoints and frontend UI components are being incrementally implemented according to [SPEC.md](SPEC.md).
+A full-stack web application designed for researchers and engineers to upload research papers in PDF format, receive a structured 5-section summary, and ask natural-language questions through an interactive, grounded chat interface with page citations.
 
 ## Implementation Status
 
 | Feature / Component | Status | Description |
 | :--- | :--- | :--- |
-| **Backend Base & Health** | **Completed** | FastAPI server running with `/health` endpoint. |
-| **Frontend Base** | **Completed** | Next.js 15.5 & React 19.3 App Router placeholder. |
-| **Upload Validation** | *Planned (Commit 3)* | MIME type (415), size limit (413), and SHA-256 on receipt. |
-| **PDF Parser** | *Planned (Commit 4)* | PyMuPDF text extraction, 422 empty scan rejection, page chunking. |
-| **Summary Cache** | *Planned (Commit 5)* | SHA-256 keyed cache (in-memory with disk fallback). |
-| **Structured Summarizer** | *Planned (Commit 6–7)*| 5-section `SummarySchema`, OpenAI structured output, 1-retry rule. |
-| **Vector Indexing & RAG** | *Planned (Commit 8)* | ChromaDB vector store in `.chroma/`, `text-embedding-3-small`. |
-| **Grounded Chat & Citations** | *Planned (Commit 9)* | Multi-turn sliding history, SSE streaming, page citations. |
-| **Frontend UI Components** | *Planned (Commit 10–12)*| `UploadZone`, `SummaryView`, `ChatPanel`, `SourceCard`. |
+| **Backend Base & Health** | **Completed** | FastAPI server running with `/health` endpoint and CORS middleware. |
+| **Frontend Base & Layout** | **Completed** | Next.js 15.5 & React 19.3 App Router shell with responsive layout. |
+| **Upload Validation** | **Completed** | Multipart upload validation with MIME check (415), size limit (413), and SHA-256 calculation on receipt. |
+| **PDF Parser** | **Completed** | PyMuPDF text extraction, image-only/scanned PDF rejection (422), and page chunking. |
+| **Summary Cache** | **Completed** | SHA-256 keyed cache with memory store and atomic disk fallback in `.cache/summaries/`. |
+| **Structured Summarizer** | **Completed** | 5-section `SummarySchema` (`title_authors_abstract`, `problem_statement`, `methodology`, `key_results`, `conclusion`), strict JSON structured output, 1-retry validation rule, and prompt injection defense. |
+| **Vector Indexing & RAG** | **Completed** | ChromaDB persistent store in `.chroma/`, `text-embedding-3-small` embeddings, and top-k cosine similarity retrieval. |
+| **Grounded Chat & Citations** | **Completed** | Grounded Q&A chat with 5-turn sliding history (10 messages), SSE token streaming, exact source snippets ($\le 200$ chars), and page provenance citations. |
+| **Frontend UI Components** | **Completed** | `UploadZone`, `SummaryView`, `ChatPanel`, and `SourceCard` with loading, empty, and error states. |
+| **End-to-End Page Integration** | **Completed** | Complete UI flow in `app/page.tsx`, automated full-flow smoke test (`test_e2e_smoke.py`), and paper reset functionality. |
 
 ## Prerequisites
 
-- **Python**: 3.11+
+- **Python**: 3.11+ (Python 3.14 tested)
 - **Node.js**: 20.9 or later
-- **OpenAI API Key**: Required for live manual testing from Commit 6 onward (`OPENAI_API_KEY`). Automated test suites (`pytest`) always run against mocked clients without needing a live key.
+- **OpenAI API Key**: Required for live summarization and chat (`OPENAI_API_KEY`). All test suites use mocked clients and run without making real API calls.
 
 ## Tech Stack
 
-- **Backend**: Python 3.11+, FastAPI (async), PyMuPDF (`fitz`), ChromaDB, OpenAI SDK (`gpt-4o` and `text-embedding-3-small`), Pydantic v2.
-- **Frontend**: Next.js 15.5 (App Router), React 19.3, TypeScript 5.9, Tailwind CSS 3.4, Lucide React 0.475.
+- **Backend**: Python 3.11+, FastAPI (async), PyMuPDF (`pymupdf`), ChromaDB, OpenAI Python SDK (`gpt-4o` and `text-embedding-3-small`), Pydantic v2.
+- **Frontend**: Next.js 15.5 (App Router), React 19.3, TypeScript 5.7+, Tailwind CSS 3.4, Lucide React, Vitest 5.1, Testing Library.
 
-## Target Repository Layout
+## Repository Layout
 
 ```
 /
@@ -38,42 +37,59 @@ A full-stack web application designed for researchers and engineers to upload re
 ├── README.md                  # Project overview and setup instructions
 ├── backend/
 │   ├── app/
-│   │   ├── main.py            # FastAPI entry point & CORS (current: /health route)
-│   │   ├── api/               # API route handlers (planned: upload, summary, chat)
-│   │   ├── services/          # Business logic (planned: pdf_parser, summarizer, qa, cache)
-│   │   ├── schemas/           # Pydantic models (planned: summary, upload, chat)
-│   │   └── core/config.py     # Environment configuration (planned: Commit 2)
+│   │   ├── main.py            # FastAPI entry point & CORS
+│   │   ├── api/               # API route handlers: upload, summary, chat
+│   │   ├── services/          # pdf_parser, summarizer, qa, cache, summary_service
+│   │   ├── schemas/           # Pydantic models: upload, summary, chat
+│   │   └── core/              # config.py, dependencies.py
 │   ├── tests/
-│   │   ├── test_health.py     # Baseline health endpoint test (completed)
-│   │   └── fixtures/          # Test PDF fixtures (planned: Commit 4)
+│   │   ├── fixtures/          # Test PDF fixtures (sample_scanned.pdf)
+│   │   ├── test_upload_validation.py
+│   │   ├── test_pdf_parser.py
+│   │   ├── test_cache.py
+│   │   ├── test_summarizer.py
+│   │   ├── test_summary_endpoint.py
+│   │   ├── test_retrieval.py
+│   │   ├── test_chat_endpoint.py
+│   │   ├── test_text_rehydration.py
+│   │   └── test_e2e_smoke.py  # End-to-end integration smoke test
+│   ├── scripts/
+│   │   └── generate_scanned_pdf.py
 │   ├── requirements.txt       # Python dependencies
 │   └── .env.example           # Backend environment template
 └── frontend/
     ├── app/
-    │   ├── layout.tsx         # Root layout with Tailwind styling (completed)
-    │   └── page.tsx           # Placeholder landing page (wired in Commit 12)
-    ├── components/            # UI components (planned: UploadZone, SummaryView, ChatPanel, SourceCard)
-    ├── lib/api.ts             # Typed backend API client (planned: Commit 10)
-    ├── package.json           # Frontend dependencies (Next.js 15.5, React 19.3, lockfile-pinned)
+    │   ├── layout.tsx         # Responsive application shell
+    │   ├── page.tsx           # Main page wiring upload, summary, and chat
+    │   └── globals.css
+    ├── components/            # UploadZone, SummaryView, ChatPanel, SourceCard
+    ├── lib/
+    │   ├── api.ts             # Typed backend API client & models
+    │   └── sse.ts             # Server-Sent Events parser
+    ├── package.json           # Frontend dependencies and test script
+    ├── vitest.config.mts      # Vitest configuration with jsdom & React plugin
     └── .env.local.example     # Frontend environment template
 ```
 
-## Quick Start (Development In Progress)
-
-> **Note**: The application is currently under construction. Running the dev servers will display the initial placeholder landing page and verify backend `/health`. Full document processing and chat become interactive at Commit 12.
+## Quick Start
 
 ### 1. Backend Setup
+
+From the repository root:
 
 ```bash
 cd backend
 pip install -r requirements.txt
 cp .env.example .env
-# Edit .env and supply your OPENAI_API_KEY (needed from Commit 6 onward)
+# Edit .env and supply your OPENAI_API_KEY
 uvicorn app.main:app --reload --port 8000
 ```
-Backend health check can be verified at: [http://localhost:8000/health](http://localhost:8000/health)
+
+Verify backend health at [http://localhost:8000/health](http://localhost:8000/health) (`{"status":"ok"}`).
 
 ### 2. Frontend Setup
+
+In a separate terminal from the repository root:
 
 ```bash
 cd frontend
@@ -82,21 +98,38 @@ cp .env.local.example .env.local
 npm run dev
 ```
 
-The placeholder interface is accessible at [http://localhost:3000](http://localhost:3000).
+Open [http://localhost:3000](http://localhost:3000) in your browser.
+
+## Persistence & Restart Behavior
+
+The application is designed to withstand server restarts without loss of document state:
+
+1. **Summary Persistence**: Summaries are cached atomically on disk under `.cache/summaries/{doc_hash}.json`. A subsequent request for an existing document hash is served immediately from disk cache without invoking the LLM.
+2. **Vector Index Persistence**: Chunks and their embeddings are persisted in ChromaDB under `.chroma/` in collections named `doc_{first_32_chars_of_hash}`. Re-indexing the same document is skipped automatically.
+3. **Paper Text Rehydration**: In-memory paper text is backed by the ChromaDB vector index. If the backend restarts and receives a summary request with a summary cache miss, it rehydrates the full paper text by fetching stored chunks from ChromaDB, sorting them by their original numeric index (`{doc_hash}:{index}`), and caching them in memory.
+4. **Temporary File Isolation**: Raw uploaded PDF files are stored in temporary files only during parsing and indexing, and are cleaned up in a `finally` block immediately after processing.
 
 ## Testing & Quality Assurance
 
-- **Backend Tests & Linting**:
-  ```bash
-  cd backend
-  pytest                 # Currently runs test_health.py (more tests added per commit)
-  ruff check .
-  ruff format --check .
-  ```
-- **Frontend Type Check, Linting & Build**:
-  ```bash
-  cd frontend
-  npm run lint
-  npx tsc --noEmit
-  npm run build          # Verifies production Next.js compilation
-  ```
+### Backend Verification
+
+Run from `backend/`:
+
+```bash
+cd backend
+pytest -v              # Runs 71 unit and integration tests + 2 placeholder fixtures
+ruff check .           # Lints all Python code
+ruff format --check .  # Verifies PEP 8 formatting
+```
+
+### Frontend Verification
+
+Run from `frontend/`:
+
+```bash
+cd frontend
+npm test               # Runs 30 unit & component tests in Vitest
+npm run lint           # ESLint verification
+npx tsc --noEmit       # Strict TypeScript type check
+npm run build          # Production Next.js compilation
+```
