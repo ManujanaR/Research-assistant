@@ -34,8 +34,9 @@ export function PrintReport({
   useEffect(() => {
     // Mount the button into the top bar header actions area to the left of the theme toggle
     const headerActions =
-      document.querySelector("header .flex.items-center.gap-2\\.5") ||
-      document.querySelector("header > div > div:last-child");
+      document.querySelector('[data-testid="top-bar-actions"]') ||
+      document.querySelector("header.bg-surface-panel .flex.items-center.gap-2\\.5") ||
+      document.querySelector("header .flex.items-center.gap-2\\.5");
     if (headerActions) {
       const themeToggle =
         headerActions.querySelector('button[aria-label*="theme" i]') ||
@@ -43,7 +44,7 @@ export function PrintReport({
         headerActions.lastElementChild;
 
       const container = document.createElement("div");
-      container.className = "flex items-center";
+      container.className = "flex items-center flex-shrink-0";
       if (themeToggle && themeToggle.parentNode === headerActions) {
         headerActions.insertBefore(container, themeToggle);
       } else {
@@ -137,18 +138,20 @@ export function PrintReport({
   };
 
   const buttonContent = (
-    <div className="flex items-center gap-2 flex-shrink-0 no-print print:hidden">
+    <div className="flex items-center gap-1.5 sm:gap-2 flex-shrink-0 no-print print:hidden">
       <button
         type="button"
         onClick={handlePrint}
         disabled={isDisabled}
-        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-xl border border-border-subtle bg-surface-panel hover:bg-surface-pill-hover text-text-primary disabled:opacity-50 disabled:cursor-not-allowed transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 shadow-sm min-h-[36px]"
+        aria-label="Print report"
+        title="Print report"
+        className="inline-flex items-center justify-center gap-1.5 px-2.5 sm:px-3 py-1.5 text-xs font-medium rounded-xl border border-border-subtle bg-surface-panel hover:bg-surface-pill-hover text-text-primary disabled:opacity-50 disabled:cursor-not-allowed transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 shadow-sm min-h-[44px] min-w-[44px] sm:min-w-0 flex-shrink-0"
       >
-        <Printer className="w-3.5 h-3.5 text-text-secondary" />
-        <span>Print report</span>
+        <Printer className="w-4 h-4 text-text-secondary flex-shrink-0" />
+        <span className="hidden sm:inline">Print report</span>
       </button>
       {isDisabled && (
-        <span className="text-xs text-text-muted hidden sm:inline">
+        <span className="text-xs text-text-muted hidden lg:inline">
           Upload a paper first.
         </span>
       )}

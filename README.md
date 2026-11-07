@@ -103,6 +103,18 @@ Configure backend settings in `backend/.env`:
 | `SUMMARY_CACHE_DIR` | `.cache/summaries` | Directory for disk-persisted summaries. |
 | `CHROMA_DIR` | `.chroma` | Directory for persistent ChromaDB storage. |
 | `CITATION_MAX_DISTANCE` | `0.6` | Maximum retrieval distance for citation relevance. |
+| `ENVIRONMENT` | `development` | Runtime environment (`development` or `production`). |
+| `AUTH_SECRET_KEY` | `""` | Secret key for signing JWT session tokens. Required in production. |
+| `AUTH_TOKEN_TTL_MINUTES` | `60` | Session token time-to-live in minutes. |
+| `DATABASE_URL` | `sqlite:///./data/app.db` | SQLAlchemy database URL for users and document ownership. |
+
+#### Generate a Secret Key
+
+To generate a secure random string for `AUTH_SECRET_KEY`, run:
+
+```bash
+python -c "import secrets; print(secrets.token_urlsafe(48))"
+```
 
 #### Provider Configuration Examples
 
@@ -171,3 +183,5 @@ npm run build          # Production Next.js compilation
 ## Known Limitations
 
 - **Citation Relevance Filtering**: The `CITATION_MAX_DISTANCE` threshold hides citation cards when the retrieval cosine distance is high (e.g. for completely off-topic questions). However, if the model responds conversationally to an off-topic query, and that query happens to retrieve a chunk with cosine distance below 0.6, citations will still appear alongside the reply. A more restrictive fix (such as enforcing a constrained output format or secondary grounding verification) will be evaluated in future iterations.
+- **In-Memory Rate Limiting**: The authentication sign-in rate limiter stores failure counts in memory. It resets when the server restarts and does not synchronize state across multiple server instances or worker processes.
+- **SQLite Single-Server Concurrency**: SQLite is a local file-based database intended for single-server execution. It is not suitable for multi-server deployments or high-concurrency write environments.

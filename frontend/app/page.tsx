@@ -1,7 +1,9 @@
 "use client";
 
-import React, { useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { BookOpen, MessageSquare, Sparkles } from "lucide-react";
+import { AuthPanel } from "@/components/AuthPanel";
+import { SignOutButton } from "@/components/SignOutButton";
 import { SourcePanel } from "@/components/SourcePanel";
 import { StudioPanel } from "@/components/StudioPanel";
 import { ChatPanel } from "@/components/ChatPanel";
@@ -10,6 +12,8 @@ import {
   ApiError,
   SummaryResponse,
   UploadResponse,
+  UserResponse,
+  getMe,
   getSummary,
 } from "@/lib/api";
 
@@ -28,6 +32,9 @@ const MOBILE_TABS: readonly TabItem[] = [
 ] as const;
 
 export default function Home() {
+  const [currentUser, setCurrentUser] = useState<UserResponse | null>(null);
+  const [isCheckingSession, setIsCheckingSession] = useState(true);
+
   const [uploadResult, setUploadResult] = useState<UploadResponse | null>(null);
   const [summary, setSummary] = useState<SummaryResponse | null>(null);
   const [isSummaryLoading, setIsSummaryLoading] = useState(false);
@@ -65,6 +72,32 @@ export default function Home() {
   const [activeTab, setActiveTab] = useState<MobileTab>("chat");
   const tabRefs = useRef<(HTMLButtonElement | null)[]>([]);
 
+  useEffect(() => {
+    let isMounted = true;
+    async function checkSession() {
+      try {
+        const user = await getMe();
+        if (isMounted) {
+          setCurrentUser(user);
+        }
+      } catch {
+        if (isMounted) {
+          setCurrentUser(null);
+        }
+      } finally {
+        if (isMounted) {
+          setIsCheckingSession(false);
+        }
+      }
+    }
+
+    checkSession();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
   const handleUploaded = async (result: UploadResponse) => {
     setUploadResult(result);
     setIsSummaryLoading(true);
@@ -95,6 +128,16 @@ export default function Home() {
     setActiveTab("chat");
   };
 
+  const handleSignOut = () => {
+    setCurrentUser(null);
+    handleReset();
+  };
+
+  const handleAuthSuccess = (user: UserResponse) => {
+    setCurrentUser(user);
+    handleReset();
+  };
+
   const handleTabKeyDown = (
     e: React.KeyboardEvent<HTMLButtonElement>,
     index: number
@@ -112,15 +155,48 @@ export default function Home() {
     }
   };
 
+  // 1. Startup screen while checking session
+  if (isCheckingSession) {
+    return (
+      <div
+        data-testid="startup-screen"
+        className="w-full h-full flex flex-1 flex-col items-center justify-center bg-bg-base text-text-primary p-6 transition-colors"
+      >
+        <div className="flex flex-col items-center gap-4">
+          <div className="flex items-center gap-2 select-none">
+            <span className="text-3xl font-bold tracking-tight text-blue-600 dark:text-accent-blue">
+              Research
+            </span>
+            <span className="text-3xl font-medium text-slate-700 dark:text-text-primary">
+              Assistant
+            </span>
+          </div>
+          <div className="flex items-center gap-2.5 text-text-secondary text-sm">
+            <div className="w-4 h-4 border-2 border-blue-600 dark:border-accent-blue border-t-transparent rounded-full animate-spin" />
+            <span>Loading...</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // 2. Unauthenticated: AuthPanel
+  if (!currentUser) {
+    return <AuthPanel onSuccess={handleAuthSuccess} />;
+  }
+
+  // 3. Authenticated: Workspace
   return (
     <div className="w-full h-full flex flex-col flex-1 min-h-0 overflow-hidden bg-bg-base text-text-primary transition-colors duration-150">
+      <SignOutButton email={currentUser.email} onSignOut={handleSignOut} />
+
       <PrintReport
         summary={summary}
         messages={messages}
         filename={uploadResult?.filename}
       />
 
-      {/* Desktop: Three columns (hidden on mobile, flex on lg and above) */}
+      {/* Desktop: Three columns (hidden on phone/tablet, flex on lg and above) */}
       <div
         data-testid="desktop-workspace"
         className="hidden lg:flex flex-1 min-h-0 flex-row overflow-hidden w-full h-full"
@@ -148,22 +224,10 @@ export default function Home() {
           <ChatPanel docHash={uploadResult?.doc_hash ?? ""} />
         </section>
 
-        {/* Draggable Divider Handle to adjust summary panel size on desktop */}
-        <div
-          role="separator"
-          aria-orientation="vertical"
-          aria-label="Resize summary panel"
-          onMouseDown={startResizing}
-          className="w-1.5 hover:w-2 z-10 cursor-col-resize hover:bg-blue-500/40 dark:hover:bg-accent-blue/40 active:bg-blue-600 dark:active:bg-accent-blue transition-colors flex items-center justify-center group flex-shrink-0 select-none"
-        >
-          <div className="w-0.5 h-8 rounded-full bg-border-subtle group-hover:bg-blue-500 dark:group-hover:bg-accent-blue transition-colors" />
-        </div>
-
         {/* Right Column: Structured Summary */}
         <aside
           data-testid="desktop-studio-panel"
-          style={{ width: `${summaryWidth}px` }}
-          className="flex-shrink-0 h-full overflow-y-auto border-l border-border-subtle bg-surface-panel transition-colors"
+          className="w-[360px] flex-shrink-0 h-full overflow-y-auto border-l border-border-subtle bg-surface-panel transition-colors"
         >
           <StudioPanel
             summary={summary}
@@ -173,15 +237,15 @@ export default function Home() {
         </aside>
       </div>
 
-      {/* Mobile: Single visible panel with bottom tab bar (flex on mobile, hidden on lg and above) */}
+      {/* Mobile & Tablet: Single visible panel with bottom tab bar (flex on phone/tablet, hidden on lg and above) */}
       <div
         data-testid="mobile-workspace"
         className="flex lg:hidden flex-1 min-h-0 flex-col overflow-hidden w-full h-full"
       >
         {/* Active Panel View */}
-        <div className="flex-1 min-h-0 overflow-y-auto">
+        <div className="flex-1 min-h-0 overflow-y-auto w-full">
           {activeTab === "source" && (
-            <div className="h-full">
+            <div className="h-full w-full">
               <SourcePanel
                 filename={uploadResult?.filename}
                 pageCount={uploadResult?.page_count}
@@ -193,12 +257,12 @@ export default function Home() {
             </div>
           )}
           {activeTab === "chat" && (
-            <div className="h-full p-2.5 sm:p-3 bg-bg-base">
+            <div className="h-full w-full p-2.5 sm:p-4 bg-bg-base">
               <ChatPanel docHash={uploadResult?.doc_hash ?? ""} />
             </div>
           )}
           {activeTab === "studio" && (
-            <div className="h-full">
+            <div className="h-full w-full">
               <StudioPanel
                 summary={summary}
                 isLoading={isSummaryLoading}
@@ -208,11 +272,11 @@ export default function Home() {
           )}
         </div>
 
-        {/* Mobile Bottom Tab Bar */}
+        {/* Mobile/Tablet Bottom Tab Bar */}
         <nav
           role="tablist"
           aria-label="Workspace tabs"
-          className="h-16 border-t border-border-subtle bg-surface-panel flex items-center justify-around flex-shrink-0 px-2 pb-safe shadow-lg transition-colors"
+          className="w-full h-16 border-t border-border-subtle bg-surface-panel flex items-center justify-around flex-shrink-0 px-2 pb-[env(safe-area-inset-bottom)] shadow-lg transition-colors lg:hidden"
         >
           {MOBILE_TABS.map((tab, index) => {
             const isSelected = activeTab === tab.id;
@@ -231,7 +295,7 @@ export default function Home() {
                 tabIndex={isSelected ? 0 : -1}
                 onClick={() => setActiveTab(tab.id)}
                 onKeyDown={(e) => handleTabKeyDown(e, index)}
-                className={`flex-1 flex flex-col items-center justify-center py-2 px-2 rounded-xl text-xs font-medium transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 min-h-[46px] ${
+                className={`flex-1 flex flex-col items-center justify-center py-2 px-2 rounded-xl text-xs font-medium transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 min-h-[44px] ${
                   isSelected
                     ? "text-blue-600 dark:text-accent-blue bg-surface-pill shadow-sm"
                     : "text-text-muted hover:text-text-primary hover:bg-surface-pill-hover"

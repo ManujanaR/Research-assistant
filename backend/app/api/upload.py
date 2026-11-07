@@ -6,13 +6,18 @@ from typing import Annotated
 import openai
 from chromadb.api import ClientAPI
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from sqlalchemy.orm import Session
 
 from app.core.dependencies import (
     get_chroma_client,
+    get_current_user,
     get_embedding_function,
     get_paper_text_store,
 )
+from app.db.session import get_db
+from app.models.user import User
 from app.schemas.upload import UploadResponse
+from app.services.ownership_service import record_owner
 from app.services.pdf_parser import (
     NoExtractableTextError,
     PdfParseError,
@@ -30,6 +35,8 @@ router = APIRouter(prefix="/api", tags=["upload"])
 @router.post("/upload", response_model=UploadResponse)
 async def upload_document(
     file: Annotated[UploadFile, File()],
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
     text_store: Annotated[PaperTextStore, Depends(get_paper_text_store)],
     chroma_client: Annotated[ClientAPI, Depends(get_chroma_client)],
     embed_fn: Annotated[EmbedFn, Depends(get_embedding_function)],
@@ -96,6 +103,9 @@ async def upload_document(
                 status_code=502,
                 detail=f"The AI provider returned an error (status {exc.status_code}). Check MODEL_NAME and EMBEDDING_MODEL in backend/.env.",
             ) from exc
+
+        # Record document ownership (first uploader remains recorded owner)
+        record_owner(doc_hash, current_user.id, db=db)
 
         return UploadResponse(
             doc_hash=doc_hash,

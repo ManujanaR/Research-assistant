@@ -36,6 +36,7 @@
   --foreground: var(--text-primary);
 }
 
+html,
 body {
   color: var(--foreground);
   background: var(--background);
@@ -44,6 +45,8 @@ body {
   padding: 0;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  overflow-x: hidden;
+  max-width: 100vw;
 }
 
 /* Custom scrollbars that adapt to dark/light theme */

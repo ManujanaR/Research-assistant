@@ -212,7 +212,7 @@ export function ChatPanel({ docHash }: ChatPanelProps) {
               >
                 {/* Message Bubble */}
                 <div
-                  className={`flex gap-2.5 max-w-[90%] sm:max-w-[85%] ${
+                  className={`flex gap-2.5 max-w-[85%] ${
                     msg.role === "user"
                       ? "bg-blue-600 text-white rounded-2xl rounded-tr-sm px-4 py-2.5 shadow-sm"
                       : "bg-surface-elevated text-text-primary border border-border-subtle rounded-2xl rounded-tl-sm px-4 py-2.5 shadow-sm"
@@ -262,7 +262,7 @@ export function ChatPanel({ docHash }: ChatPanelProps) {
                 {hasSources && (
                   <div
                     data-testid="message-sources"
-                    className="w-full max-w-[90%] sm:max-w-[85%] mt-1 space-y-2 pl-3 sm:pl-4"
+                    className="w-full max-w-[85%] mt-1 space-y-2 pl-3 sm:pl-4"
                   >
                     <p className="text-[11px] font-semibold text-text-secondary uppercase tracking-wider">
                       Citations ({msgSources.length})
@@ -365,9 +365,9 @@ export function ChatPanel({ docHash }: ChatPanelProps) {
       {/* Input area */}
       <form
         onSubmit={handleSubmit}
-        className="p-3 sm:p-4 border-t border-border-subtle bg-surface-panel flex-shrink-0"
+        className="p-2.5 sm:p-4 border-t border-border-subtle bg-surface-panel flex-shrink-0 w-full"
       >
-        <div className="relative flex items-end gap-2">
+        <div className="relative flex items-end gap-2 w-full">
           <textarea
             value={input}
             onChange={(e) => setInput(e.target.value)}
@@ -387,7 +387,7 @@ export function ChatPanel({ docHash }: ChatPanelProps) {
             disabled={isStreaming || !docHash}
             maxLength={2000}
             rows={2}
-            className="flex-1 resize-none rounded-2xl border border-border-subtle p-3 text-base sm:text-sm focus:border-accent-blue focus:outline-none focus:ring-1 focus:ring-accent-blue disabled:bg-surface-elevated disabled:text-text-muted placeholder:text-text-muted bg-surface-panel text-text-primary shadow-sm"
+            className="flex-1 min-w-0 resize-none rounded-2xl border border-border-subtle p-2.5 sm:p-3 text-base sm:text-sm focus:border-accent-blue focus:outline-none focus:ring-1 focus:ring-accent-blue disabled:bg-surface-elevated disabled:text-text-muted placeholder:text-text-muted bg-surface-panel text-text-primary shadow-sm"
           />
 
           {isStreaming ? (
@@ -410,19 +410,19 @@ export function ChatPanel({ docHash }: ChatPanelProps) {
             </button>
           )}
         </div>
-        <div className="flex justify-between items-center mt-2.5 px-1 text-[11px] text-text-muted">
-          <div className="flex items-center gap-2 truncate mr-2">
+        <div className="flex justify-between items-center mt-2 px-1 text-[11px] text-text-muted min-w-0">
+          <div className="flex items-center gap-2 truncate mr-2 min-w-0">
             {docHash ? (
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-surface-pill border border-border-subtle text-text-secondary font-medium">
+              <span className="hidden xs:inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-surface-pill border border-border-subtle text-text-secondary font-medium flex-shrink-0">
                 <Sparkles className="w-3 h-3 text-accent-blue" />
                 1 document indexed
               </span>
             ) : null}
-            <span className="truncate">
+            <span className="hidden sm:inline truncate">
               Strictly Depend on Uploaded PDF
             </span>
           </div>
-          <span className="flex-shrink-0 font-mono">{input.length}/2000</span>
+          <span className="flex-shrink-0 font-mono text-[11px] ml-auto">{input.length}/2000</span>
         </div>
       </form>
     </div>

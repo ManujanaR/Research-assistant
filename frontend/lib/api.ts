@@ -26,6 +26,11 @@ export interface ChatSource {
   snippet: string;
 }
 
+export interface UserResponse {
+  id: string;
+  email: string;
+}
+
 export class ApiError extends Error {
   readonly status: number;
   readonly detail: string;
@@ -67,12 +72,13 @@ interface ErrorResponseBody {
 
 export async function parseErrorResponse(response: Response): Promise<ApiError> {
   const status = response.status;
+  let detail: string | undefined;
+
   try {
     const data = (await response.json()) as ErrorResponseBody;
     if (typeof data?.detail === "string") {
-      return new ApiError(status, data.detail);
-    }
-    if (Array.isArray(data?.detail)) {
+      detail = data.detail;
+    } else if (Array.isArray(data?.detail)) {
       const messages = data.detail
         .map((item) => {
           if (typeof item === "object" && item !== null && "msg" in item) {
@@ -82,22 +88,125 @@ export async function parseErrorResponse(response: Response): Promise<ApiError> 
           return String(item);
         })
         .filter((msg) => msg.length > 0);
-      return new ApiError(
-        status,
-        messages.join("; ") || "Validation failed"
-      );
-    }
-    if (data?.detail) {
-      return new ApiError(status, String(data.detail));
+      detail = messages.join("; ");
+    } else if (data?.detail) {
+      detail = String(data.detail);
     }
   } catch {
     // Non-JSON response fallback
   }
 
+  // Canonical mapping for authentication status codes per DESIGN.md section 4.9
+  if (status === 401) {
+    if (!detail || detail.toLowerCase().includes("unauthorized") || detail === "Not authenticated") {
+      detail = detail || "Email or password is incorrect.";
+    }
+  } else if (status === 409) {
+    detail = detail || "An account with this email already exists.";
+  } else if (status === 422) {
+    if (!detail || detail.toLowerCase().includes("at least 8") || detail.toLowerCase().includes("password")) {
+      detail = "Password must be at least 8 characters.";
+    }
+  } else if (status === 429) {
+    detail = detail || "Too many attempts. Try again in a few minutes.";
+  }
+
   return new ApiError(
     status,
-    response.statusText || `Request failed with status ${status}`
+    detail || response.statusText || `Request failed with status ${status}`
   );
+}
+
+export async function signUp(
+  email: string,
+  password: string
+): Promise<UserResponse> {
+  let response: Response;
+  try {
+    response = await fetch(`${BASE_URL}/api/auth/signup`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      credentials: "include",
+      body: JSON.stringify({ email, password }),
+    });
+  } catch (err) {
+    throw new ApiError(0, err instanceof Error ? err.message : "Network error");
+  }
+
+  if (!response.ok) {
+    throw await parseErrorResponse(response);
+  }
+
+  return (await response.json()) as UserResponse;
+}
+
+export async function signIn(
+  email: string,
+  password: string
+): Promise<UserResponse> {
+  let response: Response;
+  try {
+    response = await fetch(`${BASE_URL}/api/auth/signin`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      credentials: "include",
+      body: JSON.stringify({ email, password }),
+    });
+  } catch (err) {
+    throw new ApiError(0, err instanceof Error ? err.message : "Network error");
+  }
+
+  if (!response.ok) {
+    throw await parseErrorResponse(response);
+  }
+
+  return (await response.json()) as UserResponse;
+}
+
+export async function signOut(): Promise<{ status: string }> {
+  let response: Response;
+  try {
+    response = await fetch(`${BASE_URL}/api/auth/signout`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      credentials: "include",
+    });
+  } catch (err) {
+    throw new ApiError(0, err instanceof Error ? err.message : "Network error");
+  }
+
+  if (!response.ok) {
+    throw await parseErrorResponse(response);
+  }
+
+  return (await response.json()) as { status: string };
+}
+
+export async function getMe(): Promise<UserResponse> {
+  let response: Response;
+  try {
+    response = await fetch(`${BASE_URL}/api/auth/me`, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      credentials: "include",
+    });
+  } catch (err) {
+    throw new ApiError(0, err instanceof Error ? err.message : "Network error");
+  }
+
+  if (!response.ok) {
+    throw await parseErrorResponse(response);
+  }
+
+  return (await response.json()) as UserResponse;
 }
 
 export async function uploadPdf(file: File): Promise<UploadResponse> {
@@ -108,6 +217,7 @@ export async function uploadPdf(file: File): Promise<UploadResponse> {
   try {
     response = await fetch(`${BASE_URL}/api/upload`, {
       method: "POST",
+      credentials: "include",
       body: formData,
     });
   } catch (err) {
@@ -129,6 +239,7 @@ export async function getSummary(docHash: string): Promise<SummaryResponse> {
       headers: {
         "Content-Type": "application/json",
       },
+      credentials: "include",
       body: JSON.stringify({ doc_hash: docHash }),
     });
   } catch (err) {
@@ -161,6 +272,7 @@ export async function streamChat(
       headers: {
         "Content-Type": "application/json",
       },
+      credentials: "include",
       body: JSON.stringify({
         doc_hash: params.doc_hash,
         message: params.message,

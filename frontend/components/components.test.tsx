@@ -17,12 +17,18 @@ import { StudioPanel } from "./StudioPanel";
 import { ChatPanel } from "./ChatPanel";
 import { PrintReport } from "./PrintReport";
 import { ThemeToggle } from "./ThemeToggle";
+import { AuthPanel } from "./AuthPanel";
+import { SignOutButton } from "./SignOutButton";
 import Home from "@/app/page";
 import {
   ApiError,
   uploadPdf,
   getSummary,
   streamChat,
+  getMe,
+  signIn,
+  signUp,
+  signOut,
   SummaryResponse,
 } from "@/lib/api";
 
@@ -33,6 +39,10 @@ vi.mock("@/lib/api", async () => {
     uploadPdf: vi.fn(),
     getSummary: vi.fn(),
     streamChat: vi.fn(),
+    getMe: vi.fn(),
+    signIn: vi.fn(),
+    signUp: vi.fn(),
+    signOut: vi.fn(),
   };
 });
 
@@ -55,10 +65,15 @@ function mockMatchMedia(matches: boolean) {
 describe("Frontend UI Components", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(getMe).mockResolvedValue({
+      id: "user-1",
+      email: "user@example.com",
+    });
   });
 
   afterEach(() => {
     cleanup();
+    document.body.innerHTML = "";
   });
 
   describe("UploadZone", () => {
@@ -609,6 +624,7 @@ describe("Frontend UI Components", () => {
       mockMatchMedia(true);
 
       render(<Home />);
+      await screen.findByTestId("desktop-workspace");
 
       // Perform upload to transition to workspace
       const file = new File(["pdf content"], "test-transformer.pdf", {
@@ -633,6 +649,7 @@ describe("Frontend UI Components", () => {
       mockMatchMedia(false);
 
       render(<Home />);
+      await screen.findByTestId("mobile-workspace");
 
       const file = new File(["pdf content"], "test-transformer.pdf", {
         type: "application/pdf",
@@ -672,6 +689,7 @@ describe("Frontend UI Components", () => {
       mockMatchMedia(false);
 
       render(<Home />);
+      await screen.findByTestId("mobile-workspace");
 
       const file = new File(["pdf content"], "test-transformer.pdf", {
         type: "application/pdf",
@@ -830,6 +848,182 @@ describe("Frontend UI Components", () => {
       ).toContain(
         "Answers are grounded in retrieved passages of the uploaded paper. Verify against the source."
       );
+    });
+  });
+
+  describe("Authentication & Session Management", () => {
+    it("sign-in tab is the default", () => {
+      render(<AuthPanel onSuccess={vi.fn()} />);
+
+      const signInTab = screen.getByRole("tab", { name: "Sign in" });
+      const signUpTab = screen.getByRole("tab", { name: "Sign up" });
+
+      expect(signInTab.getAttribute("aria-selected")).toBe("true");
+      expect(signUpTab.getAttribute("aria-selected")).toBe("false");
+      expect(screen.getByRole("button", { name: "Sign in" })).toBeDefined();
+      expect(screen.queryByLabelText("Confirm password")).toBeNull();
+    });
+
+    it("mismatched passwords on sign-up show 'Passwords do not match.' without calling the API", async () => {
+      const onSuccess = vi.fn();
+      render(<AuthPanel onSuccess={onSuccess} />);
+
+      // Switch to sign up tab
+      fireEvent.click(screen.getByRole("tab", { name: "Sign up" }));
+      expect(screen.getByLabelText("Confirm password")).toBeDefined();
+
+      fireEvent.change(screen.getByLabelText("Email"), {
+        target: { value: "test@example.com" },
+      });
+      fireEvent.change(screen.getByLabelText("Password"), {
+        target: { value: "SecretPassword123" },
+      });
+      fireEvent.change(screen.getByLabelText("Confirm password"), {
+        target: { value: "DifferentSecret456" },
+      });
+
+      fireEvent.click(screen.getByRole("button", { name: "Create account" }));
+
+      const alert = await screen.findByRole("alert");
+      expect(alert.textContent).toContain("Passwords do not match.");
+      expect(signUp).not.toHaveBeenCalled();
+      expect(onSuccess).not.toHaveBeenCalled();
+    });
+
+    it("a 401 from sign-in shows 'Email or password is incorrect.'", async () => {
+      vi.mocked(signIn).mockRejectedValueOnce(
+        new ApiError(401, "Email or password is incorrect.")
+      );
+
+      render(<AuthPanel onSuccess={vi.fn()} />);
+
+      fireEvent.change(screen.getByLabelText("Email"), {
+        target: { value: "wrong@example.com" },
+      });
+      fireEvent.change(screen.getByLabelText("Password"), {
+        target: { value: "WrongPass123" },
+      });
+
+      fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+
+      const alert = await screen.findByRole("alert");
+      expect(alert.textContent).toContain("Email or password is incorrect.");
+    });
+
+    it("a 429 shows the rate-limit message", async () => {
+      vi.mocked(signIn).mockRejectedValueOnce(
+        new ApiError(429, "Too many attempts. Try again in a few minutes.")
+      );
+
+      render(<AuthPanel onSuccess={vi.fn()} />);
+
+      fireEvent.change(screen.getByLabelText("Email"), {
+        target: { value: "rate@example.com" },
+      });
+      fireEvent.change(screen.getByLabelText("Password"), {
+        target: { value: "AnyPassword123" },
+      });
+
+      fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+
+      const alert = await screen.findByRole("alert");
+      expect(alert.textContent).toContain(
+        "Too many attempts. Try again in a few minutes."
+      );
+    });
+
+    it("focus moves to the first error on failure", async () => {
+      render(<AuthPanel onSuccess={vi.fn()} />);
+
+      fireEvent.click(screen.getByRole("tab", { name: "Sign up" }));
+      fireEvent.change(screen.getByLabelText("Email"), {
+        target: { value: "test@example.com" },
+      });
+      fireEvent.change(screen.getByLabelText("Password"), {
+        target: { value: "Secret123" },
+      });
+      fireEvent.change(screen.getByLabelText("Confirm password"), {
+        target: { value: "Mismatch123" },
+      });
+
+      fireEvent.click(screen.getByRole("button", { name: "Create account" }));
+
+      const alert = await screen.findByRole("alert");
+      await waitFor(() => {
+        expect(document.activeElement).toBe(alert);
+      });
+    });
+
+    it("the submit button is disabled while the request runs", async () => {
+      let resolvePromise: (value: { id: string; email: string }) => void;
+      const pendingPromise = new Promise<{ id: string; email: string }>(
+        (resolve) => {
+          resolvePromise = resolve;
+        }
+      );
+      vi.mocked(signIn).mockReturnValueOnce(pendingPromise);
+
+      render(<AuthPanel onSuccess={vi.fn()} />);
+
+      fireEvent.change(screen.getByLabelText("Email"), {
+        target: { value: "wait@example.com" },
+      });
+      fireEvent.change(screen.getByLabelText("Password"), {
+        target: { value: "Pass123456" },
+      });
+
+      const submitBtn = screen.getByRole("button", { name: "Sign in" }) as HTMLButtonElement;
+      fireEvent.click(submitBtn);
+
+      await waitFor(() => {
+        const btn = screen.getByRole("button", { name: /signing in/i }) as HTMLButtonElement;
+        expect(btn.disabled).toBe(true);
+      });
+
+      resolvePromise!({ id: "user-1", email: "wait@example.com" });
+    });
+
+    it("on load with a valid session, the workspace shows; without one, the sign-in page shows", async () => {
+      // 1. Valid session
+      vi.mocked(getMe).mockResolvedValueOnce({
+        id: "user-valid",
+        email: "valid@example.com",
+      });
+
+      const { unmount } = render(<Home />);
+      const desktopWorkspace = await screen.findByTestId("desktop-workspace");
+      expect(desktopWorkspace).toBeDefined();
+      expect(screen.queryByTestId("auth-page")).toBeNull();
+      unmount();
+
+      // 2. Without valid session (401)
+      vi.mocked(getMe).mockRejectedValueOnce(
+        new ApiError(401, "Not authenticated")
+      );
+
+      render(<Home />);
+      const authPage = await screen.findByTestId("auth-page");
+      expect(authPage).toBeDefined();
+      expect(screen.queryByTestId("desktop-workspace")).toBeNull();
+    });
+
+    it("sign-out returns to the sign-in page", async () => {
+      vi.mocked(getMe).mockResolvedValueOnce({
+        id: "user-1",
+        email: "logged_in@example.com",
+      });
+      vi.mocked(signOut).mockResolvedValueOnce({ status: "ok" });
+
+      render(<Home />);
+      expect(await screen.findByTestId("desktop-workspace")).toBeDefined();
+
+      const signOutBtn = await screen.findByTestId("sign-out-btn");
+      fireEvent.click(signOutBtn);
+
+      await waitFor(() => {
+        expect(screen.getByTestId("auth-page")).toBeDefined();
+      });
+      expect(screen.queryByTestId("desktop-workspace")).toBeNull();
     });
   });
 });

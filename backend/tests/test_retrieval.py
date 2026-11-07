@@ -24,8 +24,6 @@ from app.services.qa import (
 )
 from tests.test_summarizer import VALID_SUMMARY_DICT, FakeOpenAIClient
 
-client = TestClient(app)
-
 
 def make_two_page_pdf_bytes() -> bytes:
     """Create a two-page PDF with distinct text on each page."""
@@ -212,6 +210,7 @@ async def test_zero_chunk_document_raises_and_creates_no_collection(
 
 
 def test_upload_to_summary_integration_with_shared_text_store(
+    auth_client: TestClient,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -235,7 +234,7 @@ def test_upload_to_summary_integration_with_shared_text_store(
     try:
         # Step 1: Upload 2-page PDF
         pdf_bytes = make_two_page_pdf_bytes()
-        upload_resp = client.post(
+        upload_resp = auth_client.post(
             "/api/upload",
             files={"file": ("integration_paper.pdf", pdf_bytes, "application/pdf")},
         )
@@ -246,16 +245,19 @@ def test_upload_to_summary_integration_with_shared_text_store(
         assert upload_data["chunk_count"] >= 2
 
         # Step 2: Request summary with real text store
-        summary_resp = client.post("/api/summary", json={"doc_hash": doc_hash})
+        summary_resp = auth_client.post("/api/summary", json={"doc_hash": doc_hash})
         assert summary_resp.status_code == 200
         assert summary_resp.json() == VALID_SUMMARY_DICT
         assert len(fake_llm.chat.completions.calls) == 1
     finally:
-        app.dependency_overrides.clear()
+        app.dependency_overrides.pop(get_chroma_client, None)
+        app.dependency_overrides.pop(get_embedding_function, None)
+        app.dependency_overrides.pop(get_llm_client, None)
         get_settings.cache_clear()
 
 
 def test_temp_file_deleted_when_parser_raises(
+    auth_client: TestClient,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -285,7 +287,7 @@ def test_temp_file_deleted_when_parser_raises(
     try:
         pdf_bytes = make_two_page_pdf_bytes()
         with pytest.raises(RuntimeError, match="Forced parser crash"):
-            client.post(
+            auth_client.post(
                 "/api/upload",
                 files={"file": ("crash.pdf", pdf_bytes, "application/pdf")},
             )
@@ -295,10 +297,13 @@ def test_temp_file_deleted_when_parser_raises(
             "Temp PDF file must be deleted in finally block"
         )
     finally:
-        app.dependency_overrides.clear()
+        app.dependency_overrides.pop(get_chroma_client, None)
+        app.dependency_overrides.pop(get_embedding_function, None)
 
 
-def test_upload_sample_scanned_pdf_returns_422(tmp_path: Path) -> None:
+def test_upload_sample_scanned_pdf_returns_422(
+    auth_client: TestClient, tmp_path: Path
+) -> None:
     """Verify that uploading sample_scanned.pdf returns HTTP 422 with exact parser error message."""
     test_chroma = chromadb.PersistentClient(path=str(tmp_path / ".chroma"))
     embedder = CountingEmbedder()
@@ -310,7 +315,7 @@ def test_upload_sample_scanned_pdf_returns_422(tmp_path: Path) -> None:
         scanned_path = Path(__file__).parent / "fixtures" / "sample_scanned.pdf"
         assert scanned_path.is_file()
 
-        response = client.post(
+        response = auth_client.post(
             "/api/upload",
             files={
                 "file": (
@@ -325,10 +330,13 @@ def test_upload_sample_scanned_pdf_returns_422(tmp_path: Path) -> None:
             "detail": "The uploaded PDF contains no extractable text. Scanned documents or image-only PDFs are not supported."
         }
     finally:
-        app.dependency_overrides.clear()
+        app.dependency_overrides.pop(get_chroma_client, None)
+        app.dependency_overrides.pop(get_embedding_function, None)
 
 
-def test_upload_corrupt_bytes_returns_400(tmp_path: Path) -> None:
+def test_upload_corrupt_bytes_returns_400(
+    auth_client: TestClient, tmp_path: Path
+) -> None:
     """Verify that uploading corrupt bytes with application/pdf returns HTTP 400."""
     test_chroma = chromadb.PersistentClient(path=str(tmp_path / ".chroma"))
     embedder = CountingEmbedder()
@@ -337,7 +345,7 @@ def test_upload_corrupt_bytes_returns_400(tmp_path: Path) -> None:
     app.dependency_overrides[get_embedding_function] = lambda: embedder
 
     try:
-        response = client.post(
+        response = auth_client.post(
             "/api/upload",
             files={"file": ("corrupt.pdf", b"not a valid pdf", "application/pdf")},
         )
@@ -346,4 +354,5 @@ def test_upload_corrupt_bytes_returns_400(tmp_path: Path) -> None:
             "detail": "The uploaded file could not be parsed as a PDF."
         }
     finally:
-        app.dependency_overrides.clear()
+        app.dependency_overrides.pop(get_chroma_client, None)
+        app.dependency_overrides.pop(get_embedding_function, None)
