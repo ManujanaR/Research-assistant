@@ -9,8 +9,15 @@ export interface UploadResponse {
   ocr_used?: boolean;
 }
 
+export interface SummaryHeader {
+  title: string;
+  authors: string;
+  abstract: string;
+}
+
 export interface SummaryResponse {
-  title_authors_abstract: string;
+  header: SummaryHeader;
+  title_authors_abstract?: string;
   problem_statement: string;
   methodology: string;
   key_results: string;
@@ -352,13 +359,22 @@ export async function getSummary(docHash: string): Promise<SummaryResponse> {
   }
 
   const data = (await response.json()) as SummaryResponse;
+  if (data.header) {
+    return {
+      header: data.header,
+      problem_statement: data.problem_statement,
+      methodology: data.methodology,
+      key_results: data.key_results,
+      conclusion: data.conclusion,
+    };
+  }
   return {
     title_authors_abstract: data.title_authors_abstract,
     problem_statement: data.problem_statement,
     methodology: data.methodology,
     key_results: data.key_results,
     conclusion: data.conclusion,
-  };
+  } as unknown as SummaryResponse;
 }
 
 export async function streamChat(

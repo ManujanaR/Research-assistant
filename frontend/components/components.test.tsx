@@ -267,6 +267,11 @@ describe("Frontend UI Components", () => {
 
   describe("SummaryView", () => {
     const mockSummary: SummaryResponse = {
+      header: {
+        title: "Attention Is All You Need",
+        authors: "Vaswani et al.",
+        abstract: "The dominant sequence transduction models are based on complex recurrent or convolutional neural networks.",
+      },
       title_authors_abstract: "Attention Is All You Need by Vaswani et al.",
       problem_statement: "Recurrence creates computational bottlenecks.",
       methodology: "Transformer architecture with multi-head self-attention.",
@@ -316,9 +321,13 @@ describe("Frontend UI Components", () => {
         expect(h.textContent?.trim()).toBe(expectedHeadings[index]);
       });
 
-      // Section 1 is expanded by default
+      // Section 1 is expanded by default with title, authors, and abstract
+      expect(screen.getByText("Attention Is All You Need")).toBeDefined();
+      expect(screen.getByText("Vaswani et al.")).toBeDefined();
       expect(
-        screen.getByText("Attention Is All You Need by Vaswani et al.")
+        screen.getByText(
+          "The dominant sequence transduction models are based on complex recurrent or convolutional neural networks."
+        )
       ).toBeDefined();
 
       // Sections 2-5 are collapsed by default
@@ -339,6 +348,23 @@ describe("Frontend UI Components", () => {
       ).toBeDefined();
     });
 
+    it("renders title, authors, and abstract separately in the header card", () => {
+      render(
+        <SummaryView summary={mockSummary} isLoading={false} error={null} />
+      );
+
+      const titleHeading = screen.getByTestId("header-title");
+      expect(titleHeading.textContent).toBe("Attention Is All You Need");
+
+      const authorsLine = screen.getByTestId("header-authors");
+      expect(authorsLine.textContent).toBe("Vaswani et al.");
+
+      const abstractPara = screen.getByTestId("header-abstract");
+      expect(abstractPara.textContent).toBe(
+        "The dominant sequence transduction models are based on complex recurrent or convolutional neural networks."
+      );
+    });
+
     it("section copy button copies plain text and shows Copied confirmation", async () => {
       const writeTextMock = vi.fn().mockResolvedValue(undefined);
       Object.assign(navigator, {
@@ -354,9 +380,8 @@ describe("Frontend UI Components", () => {
       });
       fireEvent.click(copyBtn);
 
-      expect(writeTextMock).toHaveBeenCalledWith(
-        mockSummary.title_authors_abstract
-      );
+      const expectedText = `${mockSummary.header.title}\n${mockSummary.header.authors}\n\n${mockSummary.header.abstract}`;
+      expect(writeTextMock).toHaveBeenCalledWith(expectedText);
 
       await waitFor(() => {
         expect(screen.getByText("Copied")).toBeDefined();
@@ -797,6 +822,11 @@ describe("Frontend UI Components", () => {
     };
 
     const mockSummary: SummaryResponse = {
+      header: {
+        title: "Attention Mechanism Title",
+        authors: "Authors List",
+        abstract: "Abstract content",
+      },
       title_authors_abstract: "Attention Mechanism Title",
       problem_statement: "Attention Problem",
       methodology: "Attention Methodology",

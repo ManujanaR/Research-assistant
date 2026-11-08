@@ -98,6 +98,48 @@ def test_summary_cache_miss_with_text_present(
     assert len(fake_client.chat.completions.calls) == 1
 
 
+def test_cache_entry_with_older_version_is_a_miss_and_regenerated(
+    auth_client: AuthenticatedTestClient,
+    clean_environment: tuple[SummaryCache, InMemoryPaperTextStore],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Verify that a cached entry with version 1 is treated as a miss and is regenerated."""
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-mock-test-key")
+    get_settings.cache_clear()
+
+    cache, text_store = clean_environment
+    text_store.set_text(VALID_HASH, "Sample extracted paper text.")
+    auth_client.record_ownership(VALID_HASH)
+
+    # Store entry with version 1 directly in memory
+    old_version_entry = {
+        "version": 1,
+        "model_name": get_settings().model_name,
+        "summary": {
+            "title_authors_abstract": "Old title - Authors - Abstract",
+            "problem_statement": "Old problem",
+            "methodology": "Old methodology",
+            "key_results": "Old results",
+            "conclusion": "Old conclusion",
+        },
+    }
+    cache._memory[VALID_HASH] = old_version_entry
+
+    fake_client = FakeOpenAIClient([json.dumps(VALID_SUMMARY_DICT)])
+    app.dependency_overrides[get_llm_client] = lambda: fake_client
+
+    response = auth_client.post("/api/summary", json={"doc_hash": VALID_HASH})
+    assert response.status_code == 200
+    assert response.json() == VALID_SUMMARY_DICT
+    # Must have called LLM because version 1 was treated as a miss
+    assert len(fake_client.chat.completions.calls) == 1
+
+    # Verify that the newly cached entry has version 2
+    cached_payload = cache._memory.get(VALID_HASH)
+    assert cached_payload is not None
+    assert cached_payload.get("version") == 2
+
+
 def test_summary_cache_miss_summarizer_fails_after_retry(
     auth_client: AuthenticatedTestClient,
     clean_environment: tuple[SummaryCache, InMemoryPaperTextStore],

@@ -10,6 +10,7 @@ from app.core.config import get_settings
 logger = logging.getLogger(__name__)
 
 HEX_SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
+SUMMARY_VERSION = 2
 
 
 class SummaryCache:
@@ -60,6 +61,15 @@ class SummaryCache:
             return None
 
         if isinstance(data, dict) and "model_name" in data and "summary" in data:
+            stored_version = data.get("version")
+            if stored_version != SUMMARY_VERSION:
+                logger.warning(
+                    "Summary cache miss for %s: cached version '%s' differs from required version '%s'",
+                    doc_hash,
+                    stored_version,
+                    SUMMARY_VERSION,
+                )
+                return None
             stored_model = data.get("model_name")
             if stored_model != expected_model:
                 logger.warning(
@@ -92,6 +102,7 @@ class SummaryCache:
             model_name = get_settings().model_name
 
         payload = {
+            "version": SUMMARY_VERSION,
             "model_name": model_name,
             "summary": value,
         }

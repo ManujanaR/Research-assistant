@@ -17,12 +17,12 @@ export interface SummaryViewProps {
 }
 
 interface SummarySectionConfig {
-  key: keyof SummaryResponse;
+  key: "header" | "problem_statement" | "methodology" | "key_results" | "conclusion";
   title: string;
 }
 
 const SECTIONS: readonly SummarySectionConfig[] = [
-  { key: "title_authors_abstract", title: "Title, Authors & Abstract" },
+  { key: "header", title: "Title, Authors & Abstract" },
   { key: "problem_statement", title: "Problem Statement" },
   { key: "methodology", title: "Methodology" },
   { key: "key_results", title: "Key Results" },
@@ -34,7 +34,7 @@ export function SummaryView({ summary, isLoading, error }: SummaryViewProps) {
   const [expandedSections, setExpandedSections] = useState<
     Record<string, boolean>
   >({
-    title_authors_abstract: true,
+    header: true,
     problem_statement: false,
     methodology: false,
     key_results: false,
@@ -122,11 +122,21 @@ export function SummaryView({ summary, isLoading, error }: SummaryViewProps) {
     );
   }
 
+  const getCopyText = (key: SummarySectionConfig["key"]): string => {
+    if (key === "header") {
+      if (summary.header) {
+        return `${summary.header.title}\n${summary.header.authors}\n\n${summary.header.abstract}`.trim();
+      }
+      return summary.title_authors_abstract || "";
+    }
+    return summary[key];
+  };
+
   return (
     <div className="space-y-3">
       {SECTIONS.map((section) => {
         const isExpanded = Boolean(expandedSections[section.key]);
-        const text = summary[section.key];
+        const copyText = getCopyText(section.key);
         const isCopied = copiedSection === section.key;
         const hasCopyError = copyErrorSection === section.key;
 
@@ -173,7 +183,7 @@ export function SummaryView({ summary, isLoading, error }: SummaryViewProps) {
                 )}
                 <button
                   type="button"
-                  onClick={(e) => handleCopy(section.key, text, e)}
+                  onClick={(e) => handleCopy(section.key, copyText, e)}
                   aria-label={`Copy ${section.title}`}
                   className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-medium text-text-primary bg-surface-pill hover:bg-surface-pill-hover border border-border-subtle rounded-lg transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 min-h-[32px]"
                 >
@@ -201,7 +211,34 @@ export function SummaryView({ summary, isLoading, error }: SummaryViewProps) {
                 data-testid={`section-content-${section.key}`}
                 className="px-4 pb-4 pt-2 text-xs sm:text-sm leading-relaxed text-text-secondary whitespace-pre-wrap font-normal border-t border-border-subtle"
               >
-                {text}
+                {section.key === "header" ? (
+                  summary.header ? (
+                    <div className="space-y-2">
+                      <h4
+                        data-testid="header-title"
+                        className="text-sm sm:text-base font-semibold text-text-primary leading-snug"
+                      >
+                        {summary.header.title}
+                      </h4>
+                      <p
+                        data-testid="header-authors"
+                        className="text-xs text-text-muted font-medium"
+                      >
+                        {summary.header.authors}
+                      </p>
+                      <p
+                        data-testid="header-abstract"
+                        className="text-xs sm:text-sm text-text-secondary leading-relaxed whitespace-pre-wrap pt-1"
+                      >
+                        {summary.header.abstract}
+                      </p>
+                    </div>
+                  ) : (
+                    <div>{summary.title_authors_abstract}</div>
+                  )
+                ) : (
+                  <div>{summary[section.key]}</div>
+                )}
               </div>
             )}
           </article>
