@@ -117,6 +117,11 @@ Default theme: light.
 
   * Drag & Drop zone: Drag-and-drop file listener overlay.
 
+  * Below the upload zone (shown only before a paper is uploaded):
+    * A secondary button labelled “Convert other files”.
+    * A caption under it: “Opens iLovePDF in a new tab. Your file is sent to iLovePDF, not to Mitra.”
+    * The button opens https://www.ilovepdf.com with target="_blank" and rel="noopener noreferrer".
+
 ### 4.3 Center Workspace & Chat (Center Column)
 
 * **Hero Section (Empty State):**

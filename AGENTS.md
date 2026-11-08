@@ -131,6 +131,7 @@ Q&A:
 - Authentication is in scope: email and password sign-in with JWT in an HttpOnly cookie. Users are stored in SQLite. Every document, summary, and chat is scoped to the user who uploaded it.
 - Do not store passwords in plain text. Do not log passwords, tokens, or the secret key.
 - Do not invent citations, page numbers, or quotes. If the source location is unknown, omit it.
+- Do not send uploaded papers to any third-party converter. External tools may be linked, but the user uploads to them directly.
 
 ## Testing expectations
 
