@@ -508,3 +508,55 @@ def test_credibility_endpoint_prechecks_and_retrieval(
         assert data_done["signals"]["structure_sections_found"] == 4
     finally:
         app.dependency_overrides.clear()
+
+
+def test_flexible_token_similarity_and_threshold_boundary() -> None:
+    """Verify flexible token similarity with subtitle splitting and the 0.70 threshold boundary."""
+    from app.services.credibility_service import compute_flexible_similarity
+
+    # Subtitle splitting on colon
+    t1 = "The Impact of COVID-19 on Student Experiences: Evidence from a Survey"
+    t2 = "The Impact of COVID-19 on Student Experiences"
+    sim = compute_flexible_similarity(t1, t2)
+    assert sim == 1.0  # Main title tokens match 100%
+
+    # Threshold boundary verification
+    score_71, _, badge_71, _ = calculate_credibility_score(
+        external_check="matched",
+        external_record={"venue": "IEEE", "citation_count": 10},
+        title_similarity=0.71,
+        has_doi=False,
+        full_text="Methodology ... Results ...",
+        page_1_text="...",
+        reference_count=10,
+    )
+    assert badge_71 == "Indexed in OpenAlex"
+    assert score_71 >= 50
+
+    score_69, _, badge_69, _ = calculate_credibility_score(
+        external_check="not_matched",
+        external_record=None,
+        title_similarity=0.69,
+        has_doi=False,
+        full_text="Methodology ... Results ...",
+        page_1_text="...",
+        reference_count=10,
+    )
+    assert badge_69 == "Unindexed Draft"
+
+
+def test_extract_title_skips_working_paper_banners() -> None:
+    """Verify that extract_title_from_page_1 ignores working paper banners like NBER WORKING PAPER SERIES."""
+    from app.services.credibility_service import extract_title_from_page_1
+    page_1 = """
+    NBER WORKING PAPER SERIES
+
+    THE IMPACT OF COVID-19 ON STUDENT EXPERIENCES AND EXPECTATIONS: EVIDENCE FROM A SURVEY
+
+    Esteban M. Aucejo, Jacob F. French, Maria Paola Ugalde Araya, Basit Zafar
+    Working Paper 27392
+    """
+    title = extract_title_from_page_1(page_1)
+    assert title is not None
+    assert "NBER" not in title
+    assert "THE IMPACT OF COVID-19 ON STUDENT EXPERIENCES" in title

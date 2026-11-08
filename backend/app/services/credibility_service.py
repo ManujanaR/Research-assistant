@@ -3,6 +3,7 @@
 import json
 import logging
 import re
+import time
 import urllib.parse
 from datetime import UTC, datetime
 from typing import Any
@@ -17,8 +18,8 @@ from app.services.credibility_cache import CredibilityCache
 logger = logging.getLogger(__name__)
 
 # Strict 2.5s timeout for OpenAlex API requests
-OPENALEX_TIMEOUT_SECONDS = 2.5
-EXTERNAL_API_TIMEOUT_SECONDS = 2.5
+OPENALEX_TIMEOUT_SECONDS = 5.0
+EXTERNAL_API_TIMEOUT_SECONDS = 5.0
 
 # Regex patterns
 # Universal academic DOI pattern & URL prefix pattern
@@ -108,29 +109,77 @@ def token_set_ratio(str1: str, str2: str) -> float:
     return len(intersection) / len(union)
 
 
+def compute_flexible_similarity(title1: str, title2: str) -> float:
+    """Calculate Token-Set similarity ratio, evaluating full titles and main titles without subtitles."""
+    sim_full = token_set_ratio(title1, title2)
+
+    # Subtitle splitting on colons, em-dashes, or double hyphens (without breaking hyphens in words like COVID-19)
+    t1_main = re.split(r"\s*[:—–]\s*|\s+--\s+", title1)[0].strip()
+    t2_main = re.split(r"\s*[:—–]\s*|\s+--\s+", title2)[0].strip()
+
+    sim_main = token_set_ratio(t1_main, t2_main) if (t1_main and t2_main) else 0.0
+    return max(sim_full, sim_main)
+
+
 def extract_title_from_page_1(page_1_text: str) -> str | None:
     """Extract Title strictly from the first large text block on page 1."""
     if not page_1_text:
         return None
 
-    paragraphs = [p.strip() for p in page_1_text.split("\n\n") if p.strip()]
-    if len(paragraphs) <= 1:
-        paragraphs = [p.strip() for p in page_1_text.splitlines() if p.strip()]
-
-    # Skip boilerplate header tokens like arXiv / DOI / ISSN / dates
+    # Skip boilerplate header tokens like arXiv / DOI / ISSN / dates / working paper banners
     skip_patterns = [
         re.compile(
             r"^(arxiv|doi|issn|isbn|vol\.|volume|issue|journal|proceedings|page|\d+)",
             re.IGNORECASE,
         ),
         re.compile(r"^published\s+(in|online|as)", re.IGNORECASE),
+        re.compile(
+            r"^(nber\s+working\s+paper|national\s+bureau\s+of\s+economic\s+research|working\s+paper\s+series|working\s+paper|discussion\s+paper|technical\s+report)",
+            re.IGNORECASE,
+        ),
     ]
+
+    paragraphs = [p.strip() for p in page_1_text.split("\n\n") if p.strip()]
+    if len(paragraphs) <= 1:
+        raw_lines = [line.strip() for line in page_1_text.splitlines() if line.strip()]
+        filtered_lines: list[str] = []
+        for line in raw_lines:
+            if not filtered_lines and any(sp.match(line) for sp in skip_patterns):
+                continue
+            if not filtered_lines and line.lower().startswith(
+                (
+                    "nber working paper",
+                    "national bureau of economic research",
+                    "working paper series",
+                )
+            ):
+                continue
+            filtered_lines.append(line)
+
+        if filtered_lines:
+            title_parts = [filtered_lines[0]]
+            for next_line in filtered_lines[1:3]:
+                if title_parts[-1].endswith((":", "-", "—", "–")) or (
+                    next_line.isupper() and len(next_line.split()) <= 8
+                ):
+                    title_parts.append(next_line)
+                else:
+                    break
+            return " ".join(title_parts)[:250].strip()
 
     for p in paragraphs:
         first_line = p.splitlines()[0].strip()
         if any(sp.match(first_line) for sp in skip_patterns):
             continue
         cleaned = " ".join(p.split())
+        if cleaned.lower().startswith(
+            (
+                "nber working paper",
+                "national bureau of economic research",
+                "working paper series",
+            )
+        ):
+            continue
         # First prominent text block of substantive length
         if len(cleaned) >= 12 and not cleaned.isdigit():
             lines = [line.strip() for line in p.splitlines() if line.strip()]
@@ -206,17 +255,26 @@ async def fetch_openalex_by_doi(
 
     url = f"https://api.openalex.org/works/https://doi.org/{clean_doi}"
     headers = {
-        "User-Agent": "ResearchAssistantApp/1.0 (mailto:support@local.app)",
+        "User-Agent": "ResearchAssistant/1.0 (mailto:dev@local.app)",
         "Accept": "application/json",
     }
+    logger.info("[Credibility] Extracted DOI: %s", clean_doi)
+    logger.info("[Credibility] Query URL: %s", url)
 
     close_client = False
     if client is None:
         client = httpx.AsyncClient(timeout=OPENALEX_TIMEOUT_SECONDS)
         close_client = True
 
+    start_time = time.monotonic()
     try:
         resp = await client.get(url, headers=headers)
+        elapsed = time.monotonic() - start_time
+        logger.info(
+            "[Credibility] HTTP Status & Response Time: %s in %.2fs",
+            resp.status_code,
+            elapsed,
+        )
         if resp.status_code == 200:
             item = resp.json()
             found_title = item.get("display_name") or item.get("title") or ""
@@ -283,17 +341,26 @@ async def fetch_openalex_by_title(
     encoded_title = urllib.parse.quote(clean_title)
     url = f"https://api.openalex.org/works?search={encoded_title}&per-page=1"
     headers = {
-        "User-Agent": "ResearchAssistantApp/1.0 (mailto:support@local.app)",
+        "User-Agent": "ResearchAssistant/1.0 (mailto:dev@local.app)",
         "Accept": "application/json",
     }
+    logger.info("[Credibility] Title passed to OpenAlex: %s", clean_title)
+    logger.info("[Credibility] Query URL: %s", url)
 
     close_client = False
     if client is None:
         client = httpx.AsyncClient(timeout=OPENALEX_TIMEOUT_SECONDS)
         close_client = True
 
+    start_time = time.monotonic()
     try:
         resp = await client.get(url, headers=headers)
+        elapsed = time.monotonic() - start_time
+        logger.info(
+            "[Credibility] HTTP Status & Response Time: %s in %.2fs",
+            resp.status_code,
+            elapsed,
+        )
         if resp.status_code == 200:
             data = resp.json()
             results = data.get("results", [])
@@ -576,10 +643,25 @@ async def evaluate_document_credibility(
         db.commit()
         db.refresh(record)
 
-    title = extract_title_from_page_1(page_1_text)
-    if not title or len(title) < 5:
+    # Resolve Title: Check SummaryCache and DocumentMetadata first for cleanest paper title
+    title = None
+    try:
+        from pathlib import Path
+
+        from app.core.config import get_settings
+        from app.services.cache import SummaryCache
+
+        summary_cache = SummaryCache(Path(get_settings().summary_cache_dir))
+        cached_summary = summary_cache.get(doc_hash)
+        if cached_summary and isinstance(cached_summary, dict):
+            hdr = cached_summary.get("header")
+            if isinstance(hdr, dict) and hdr.get("title"):
+                title = hdr.get("title")
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("Failed reading cached summary title: %s", exc)
+
+    if not title:
         from app.models.document import DocumentMetadata
-        from app.services.qa import get_title_authors_abstract
 
         doc_meta = (
             db.query(DocumentMetadata)
@@ -588,12 +670,19 @@ async def evaluate_document_credibility(
         )
         if doc_meta and doc_meta.title:
             title = doc_meta.title
-        else:
-            sum_hdr = get_title_authors_abstract(doc_hash)
-            if sum_hdr:
-                title = sum_hdr.split("\n")[0].split(" by ")[0].strip()
 
-    doi = extract_doi(page_1_text)
+    if not title:
+        title = extract_title_from_page_1(page_1_text)
+
+    if not title or len(title) < 5:
+        from app.services.qa import get_title_authors_abstract
+
+        sum_hdr = get_title_authors_abstract(doc_hash)
+        if sum_hdr:
+            title = sum_hdr.split("\n")[0].split(" by ")[0].strip()
+
+    doi = extract_doi(f"{page_1_text}\n\n{full_text[:8000]}")
+    logger.info("[Credibility] Extracted DOI: %s", doi)
 
     external_check = "skipped"
     external_record: dict[str, Any] | None = None
@@ -604,23 +693,32 @@ async def evaluate_document_credibility(
         try:
             external_record = await fetch_openalex_by_doi(doi, client=http_client)
             if external_record:
+                ext_title = external_record.get("title", "")
                 if title:
-                    ext_title = external_record.get("title", "")
-                    title_similarity = token_set_ratio(title, ext_title)
+                    title_similarity = compute_flexible_similarity(title, ext_title)
                 else:
                     title_similarity = 1.0
+                logger.info(
+                    "[Credibility] OpenAlex matched title & Token Similarity Score: '%s' with score %.2f",
+                    ext_title,
+                    title_similarity,
+                )
                 external_check = "matched"
             else:
+                logger.info(
+                    "[Credibility] Reason for fallback (timeout, mismatch, 404, etc.): DOI %s returned 404 in OpenAlex",
+                    doi,
+                )
                 external_check = "not_matched"
         except (TimeoutError, httpx.TimeoutException):
-            logger.warning(
-                "OpenAlex DOI timeout (> 2.5s); falling back to title search or internal heuristics."
+            logger.info(
+                "[Credibility] Reason for fallback (timeout, mismatch, 404, etc.): OpenAlex DOI request timed out (> 5.0s)"
             )
             external_check = "error"
             external_record = None
         except Exception as exc:  # noqa: BLE001
-            logger.warning(
-                "OpenAlex DOI error (%s); falling back to title search or internal heuristics.",
+            logger.info(
+                "[Credibility] Reason for fallback (timeout, mismatch, 404, etc.): OpenAlex DOI error (%s)",
                 type(exc).__name__,
             )
             external_check = "error"
@@ -632,24 +730,38 @@ async def evaluate_document_credibility(
             fallback_record = await fetch_openalex_by_title(title, client=http_client)
             if fallback_record:
                 ext_title = fallback_record.get("title", "")
-                sim = token_set_ratio(title, ext_title)
-                if sim >= 0.80:
+                sim = compute_flexible_similarity(title, ext_title)
+                logger.info(
+                    "[Credibility] OpenAlex matched title & Token Similarity Score: '%s' with score %.2f",
+                    ext_title,
+                    sim,
+                )
+                if sim >= 0.70:
                     external_record = fallback_record
                     title_similarity = sim
                     external_check = "matched"
-                elif external_check != "error":
+                else:
+                    logger.info(
+                        "[Credibility] Reason for fallback (timeout, mismatch, 404, etc.): Token similarity %.2f < 0.70 threshold",
+                        sim,
+                    )
+                    if external_check != "error":
+                        external_check = "not_matched"
+            else:
+                logger.info(
+                    "[Credibility] Reason for fallback (timeout, mismatch, 404, etc.): OpenAlex title search yielded no results"
+                )
+                if external_check != "error":
                     external_check = "not_matched"
-            elif external_check != "error":
-                external_check = "not_matched"
         except (TimeoutError, httpx.TimeoutException):
-            logger.warning(
-                "OpenAlex title search timeout (> 2.5s); falling back to internal heuristics."
+            logger.info(
+                "[Credibility] Reason for fallback (timeout, mismatch, 404, etc.): OpenAlex title search timed out (> 5.0s)"
             )
             external_check = "error"
             external_record = None
         except Exception as exc:  # noqa: BLE001
-            logger.warning(
-                "OpenAlex title search error (%s); falling back to internal heuristics.",
+            logger.info(
+                "[Credibility] Reason for fallback (timeout, mismatch, 404, etc.): OpenAlex title search error (%s)",
                 type(exc).__name__,
             )
             external_check = "error"
