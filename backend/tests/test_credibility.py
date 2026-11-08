@@ -1,7 +1,6 @@
 """Tests for asynchronous Document Credibility & Reporting Signals service using OpenAlex."""
 
 import asyncio
-from datetime import UTC, datetime
 from pathlib import Path
 
 import httpx
@@ -16,6 +15,7 @@ from app.services.credibility_service import (
     evaluate_document_credibility,
     extract_academic_affiliation_from_front_matter,
     extract_doi,
+    fetch_openalex_by_doi,
     fetch_openalex_record,
     sanitize_openalex_title,
     token_set_ratio,
@@ -162,12 +162,12 @@ def test_openalex_mismatched_title_rejected() -> None:
 
 
 def test_title_search_similarity_threshold_boundary() -> None:
-    """Cases 3 & 4: Title similarity at 0.84 rejected (not_matched); at 0.86 accepted (matched)."""
-    # 0.84 boundary
+    """Cases 3 & 4: Title similarity at 0.79 rejected (not_matched); at 0.81 accepted (matched >= 0.80)."""
+    # 0.79 boundary
     score_low, signals_low, _, _ = calculate_credibility_score(
         external_check="not_matched",
         external_record={"venue": "IEEE Trans", "citation_count": 10, "year": 2020},
-        title_similarity=0.84,
+        title_similarity=0.79,
         has_doi=False,
         full_text="Abstract ... Methodology ...",
         page_1_text="",
@@ -175,11 +175,11 @@ def test_title_search_similarity_threshold_boundary() -> None:
     )
     assert signals_low.matched_venue is None
 
-    # 0.86 boundary
+    # 0.81 boundary
     score_high, signals_high, _, _ = calculate_credibility_score(
         external_check="matched",
         external_record={"venue": "IEEE Trans", "citation_count": 10, "year": 2020},
-        title_similarity=0.86,
+        title_similarity=0.81,
         has_doi=False,
         full_text="Abstract ... Methodology ...",
         page_1_text="",
@@ -189,34 +189,54 @@ def test_title_search_similarity_threshold_boundary() -> None:
     assert score_high >= score_low + 35  # Exactly 35 venue points difference
 
 
-def test_age_boundary_citation_scoring() -> None:
-    """Case 5: Age boundary check: <= 2 years with 0 citations gets 15 pts; > 2 years with 0 citations gets 5 pts."""
-    current_year = datetime.now(UTC).year
-
-    # Paper exactly 2 years old (<= 2 years) with 0 citations -> 15 pts baseline
-    score_recent, _, _, _ = calculate_credibility_score(
-        external_check="not_matched",
-        external_record={"year": current_year - 2, "citation_count": 0},
-        title_similarity=0.0,
-        has_doi=False,
-        full_text="",
-        page_1_text="",
-        reference_count=0,
+def test_universal_doi_extraction_patterns() -> None:
+    """Verify universal DOI extraction handles standard DOIs and DOI URLs across Page 1 & 2."""
+    assert (
+        extract_doi("Available with DOI: 10.1016/j.jpubeco.2020.104271.")
+        == "10.1016/j.jpubeco.2020.104271"
     )
-
-    # Paper 3 years old (> 2 years) with 0 citations -> 5 pts
-    score_established, _, _, _ = calculate_credibility_score(
-        external_check="not_matched",
-        external_record={"year": current_year - 3, "citation_count": 0},
-        title_similarity=0.0,
-        has_doi=False,
-        full_text="",
-        page_1_text="",
-        reference_count=0,
+    assert (
+        extract_doi("Published at https://doi.org/10.1016/j.jpubeco.2020.104271")
+        == "10.1016/j.jpubeco.2020.104271"
     )
+    assert extract_doi("doi.org/10.1109/CVPR.2021.12345;") == "10.1109/CVPR.2021.12345"
+    assert extract_doi("http://dx.doi.org/10.1000/182,") == "10.1000/182"
 
-    # Difference in citations factor must be 15 - 5 = 10 pts
-    assert score_recent - score_established == 10
+
+@pytest.mark.asyncio
+async def test_openalex_direct_doi_endpoint() -> None:
+    """Verify OpenAlex DOI lookup queries https://api.openalex.org/works/https://doi.org/{doi}."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert "works/https://doi.org/10.1016/j.jpubeco.2020.104271" in str(request.url)
+        return httpx.Response(
+            200,
+            json={
+                "display_name": "The impact of COVID-19 on student experiences",
+                "publication_year": 2020,
+                "cited_by_count": 976,
+                "primary_location": {
+                    "source": {"display_name": "Journal of Public Economics"}
+                },
+                "authorships": [
+                    {
+                        "author": {"display_name": "Esteban M. Aucejo"},
+                        "institutions": [{"display_name": "Arizona State University"}],
+                    }
+                ],
+            },
+        )
+
+    transport = httpx.MockTransport(handler)
+    async with httpx.AsyncClient(transport=transport) as client:
+        record = await fetch_openalex_by_doi(
+            "10.1016/j.jpubeco.2020.104271", client=client
+        )
+        assert record is not None
+        assert record["venue"] == "Journal of Public Economics"
+        assert record["citation_count"] == 976
+        assert record["has_institution"] is True
+        assert record["doi"] == "10.1016/j.jpubeco.2020.104271"
 
 
 @pytest.mark.asyncio
@@ -225,7 +245,7 @@ async def test_openalex_api_fetch_and_parse() -> None:
 
     def handler(request: httpx.Request) -> httpx.Response:
         assert "ResearchAssistantApp/1.0" in request.headers.get("User-Agent", "")
-        assert "title.search" in str(request.url)
+        assert "search=" in str(request.url)
         return httpx.Response(
             200,
             json={

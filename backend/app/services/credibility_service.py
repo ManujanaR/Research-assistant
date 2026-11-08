@@ -21,7 +21,11 @@ OPENALEX_TIMEOUT_SECONDS = 2.5
 EXTERNAL_API_TIMEOUT_SECONDS = 2.5
 
 # Regex patterns
-DOI_REGEX = re.compile(r"\b10\.\d{4,9}/[-._;()/:A-Za-z0-9]+\b")
+# Universal academic DOI pattern & URL prefix pattern
+DOI_REGEX = re.compile(
+    r"(?:https?://(?:dx\.)?doi\.org/|doi\.org/)?\b(10\.\d{4,9}/[-._;()/:A-Za-z0-9]+)\b",
+    re.IGNORECASE,
+)
 ARXIV_REGEX = re.compile(r"\barXiv:\d{4}\.\d{4,5}\b", re.IGNORECASE)
 # International second-level academic and research domains:
 # Recognizes .edu, .edu.<country_code> (e.g. yeeyeemon@ucsm.edu.mm),
@@ -136,45 +140,31 @@ def extract_title_from_page_1(page_1_text: str) -> str | None:
     return None
 
 
-def extract_doi(page_1_text: str) -> str | None:
-    """Scan strictly for DOI in the page 1 header, footer, or metadata block.
+def extract_doi(front_matter_text: str) -> str | None:
+    """Scan Page 1 and Page 2 for a standard academic DOI pattern or DOI URL.
 
-    Explicitly excludes DOIs inside footnotes or references/bibliography.
+    Matches:
+    - Standard DOI: 10.xxxx/yyyy
+    - DOI URLs: https://doi.org/10.xxxx/yyyy, http://dx.doi.org/10.xxxx/yyyy, doi.org/10.xxxx/yyyy
+
+    Excludes DOIs inside references or bibliography sections if present.
     """
-    if not page_1_text:
+    if not front_matter_text:
         return None
 
     ref_idx = -1
     for match in re.finditer(
-        r"\b(references|bibliography|works cited)\b", page_1_text, re.IGNORECASE
+        r"\b(references|bibliography|works cited)\b", front_matter_text, re.IGNORECASE
     ):
         ref_idx = match.start()
         break
 
-    target_text = page_1_text[:ref_idx] if ref_idx != -1 else page_1_text
-    lines = target_text.splitlines()
+    target_text = front_matter_text[:ref_idx] if ref_idx != -1 else front_matter_text
 
-    n = len(lines)
-    header_lines = lines[: max(5, int(n * 0.3))]
-    footer_lines = lines[max(0, int(n * 0.8)) :]
-
-    candidate_lines = header_lines + footer_lines
-
-    for line in lines:
-        if re.search(r"\bdoi\b", line, re.IGNORECASE) and line not in candidate_lines:
-            candidate_lines.append(line)
-
-    for line in candidate_lines:
-        if re.match(
-            r"^[\*†‡\d]+\s*(author|correspondence|electronic address)",
-            line,
-            re.IGNORECASE,
-        ):
-            continue
-        match = DOI_REGEX.search(line)
-        if match:
-            doi = match.group(0).rstrip(".,;")
-            return doi
+    match = DOI_REGEX.search(target_text)
+    if match:
+        doi = match.group(1).rstrip(".,;")
+        return doi.strip()
 
     return None
 
@@ -189,29 +179,109 @@ def extract_arxiv_id(page_1_text: str) -> str | None:
     return None
 
 
-async def fetch_openalex_record(
+async def fetch_openalex_by_doi(
+    doi: str, client: httpx.AsyncClient | None = None
+) -> dict[str, Any] | None:
+    """Query OpenAlex directly via canonical DOI endpoint with a 2.5s timeout:
+    https://api.openalex.org/works/https://doi.org/{extracted_doi}
+    """
+    clean_doi = doi.strip().rstrip(".,;")
+    for prefix in (
+        "https://doi.org/",
+        "http://doi.org/",
+        "doi.org/",
+        "https://dx.doi.org/",
+        "http://dx.doi.org/",
+    ):
+        clean_doi = clean_doi.removeprefix(prefix)
+
+    if not clean_doi:
+        return None
+
+    cache = get_credibility_cache()
+    cache_key = f"cred:openalex:doi:{clean_doi.lower()}"
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return cached
+
+    url = f"https://api.openalex.org/works/https://doi.org/{clean_doi}"
+    headers = {
+        "User-Agent": "ResearchAssistantApp/1.0 (mailto:support@local.app)",
+        "Accept": "application/json",
+    }
+
+    close_client = False
+    if client is None:
+        client = httpx.AsyncClient(timeout=OPENALEX_TIMEOUT_SECONDS)
+        close_client = True
+
+    try:
+        resp = await client.get(url, headers=headers)
+        if resp.status_code == 200:
+            item = resp.json()
+            found_title = item.get("display_name") or item.get("title") or ""
+
+            primary_loc = item.get("primary_location") or {}
+            source_obj = primary_loc.get("source") or {}
+            venue = source_obj.get("display_name") or ""
+            if not venue:
+                host_venue = item.get("host_venue") or {}
+                venue = host_venue.get("display_name") or host_venue.get("name") or ""
+
+            citation_count = int(item.get("cited_by_count", 0) or 0)
+
+            has_institution = False
+            for authorship in item.get("authorships", []):
+                for inst in authorship.get("institutions", []):
+                    if inst.get("display_name"):
+                        has_institution = True
+                        break
+                if has_institution:
+                    break
+
+            pub_year = item.get("publication_year")
+
+            record = {
+                "title": found_title,
+                "venue": venue,
+                "year": pub_year,
+                "citation_count": citation_count,
+                "has_institution": has_institution,
+                "doi": clean_doi,
+                "source": "OpenAlex",
+            }
+            cache.set(cache_key, record)
+            return record
+        elif resp.status_code == 404:
+            return None
+    except Exception as exc:
+        logger.warning("OpenAlex DOI API request failed (%s)", type(exc).__name__)
+        raise
+    finally:
+        if close_client:
+            await client.aclose()
+
+    return None
+
+
+async def fetch_openalex_by_title(
     title: str, client: httpx.AsyncClient | None = None
 ) -> dict[str, Any] | None:
-    """Query OpenAlex Works API for a given paper title with a strict 2.5s timeout.
-
-    Privacy & Grounding Constraints:
-    - Queries STRICTLY the sanitized title string. Document body, chunks, user identity,
-      and chat turns are never sent.
+    """Query OpenAlex using universal full-text relevance search parameter:
+    https://api.openalex.org/works?search={clean_title}&per-page=1
     """
     clean_title = sanitize_openalex_title(title)
     if not clean_title:
         return None
 
     cache = get_credibility_cache()
-    cache_key = f"cred:openalex:{clean_title.lower()}"
+    cache_key = f"cred:openalex:title:{clean_title.lower()}"
     cached = cache.get(cache_key)
     if cached is not None:
         return cached
 
     encoded_title = urllib.parse.quote(clean_title)
-    url = (
-        f"https://api.openalex.org/works?filter=title.search:{encoded_title}&per-page=1"
-    )
+    url = f"https://api.openalex.org/works?search={encoded_title}&per-page=1"
     headers = {
         "User-Agent": "ResearchAssistantApp/1.0 (mailto:support@local.app)",
         "Accept": "application/json",
@@ -227,20 +297,10 @@ async def fetch_openalex_record(
         if resp.status_code == 200:
             data = resp.json()
             results = data.get("results", [])
-            # If title.search returns empty, fallback to search parameter
-            if not results:
-                fallback_url = (
-                    f"https://api.openalex.org/works?search={encoded_title}&per-page=1"
-                )
-                resp_fallback = await client.get(fallback_url, headers=headers)
-                if resp_fallback.status_code == 200:
-                    results = resp_fallback.json().get("results", [])
-
             if results and isinstance(results, list):
                 item = results[0]
                 found_title = item.get("display_name") or item.get("title") or ""
 
-                # Venue / Source
                 primary_loc = item.get("primary_location") or {}
                 source_obj = primary_loc.get("source") or {}
                 venue = source_obj.get("display_name") or ""
@@ -250,10 +310,8 @@ async def fetch_openalex_record(
                         host_venue.get("display_name") or host_venue.get("name") or ""
                     )
 
-                # Citation Count
                 citation_count = int(item.get("cited_by_count", 0) or 0)
 
-                # Affiliations: Extract authorships[].institutions[].display_name
                 has_institution = False
                 for authorship in item.get("authorships", []):
                     for inst in authorship.get("institutions", []):
@@ -284,13 +342,22 @@ async def fetch_openalex_record(
         elif resp.status_code == 404:
             return None
     except Exception as exc:
-        logger.warning("OpenAlex API request failed (%s)", type(exc).__name__)
+        logger.warning(
+            "OpenAlex title search API request failed (%s)", type(exc).__name__
+        )
         raise
     finally:
         if close_client:
             await client.aclose()
 
     return None
+
+
+async def fetch_openalex_record(
+    title: str, client: httpx.AsyncClient | None = None
+) -> dict[str, Any] | None:
+    """Universal OpenAlex works query by title search."""
+    return await fetch_openalex_by_title(title, client=client)
 
 
 def estimate_references_count(full_text: str) -> int:
@@ -532,29 +599,57 @@ async def evaluate_document_credibility(
     external_record: dict[str, Any] | None = None
     title_similarity = 0.0
 
-    if not title:
-        external_check = "skipped"
-    else:
+    # Step 1: Universal DOI Extraction (Priority 1)
+    if doi:
         try:
-            external_record = await fetch_openalex_record(title, client=http_client)
+            external_record = await fetch_openalex_by_doi(doi, client=http_client)
             if external_record:
-                ext_title = external_record.get("title", "")
-                title_similarity = token_set_ratio(title, ext_title)
-                if title_similarity >= 0.85:
-                    external_check = "matched"
+                if title:
+                    ext_title = external_record.get("title", "")
+                    title_similarity = token_set_ratio(title, ext_title)
                 else:
-                    external_check = "not_matched"
+                    title_similarity = 1.0
+                external_check = "matched"
             else:
                 external_check = "not_matched"
         except (TimeoutError, httpx.TimeoutException):
             logger.warning(
-                "OpenAlex API timeout (> 2.5s); falling back to internal heuristics."
+                "OpenAlex DOI timeout (> 2.5s); falling back to title search or internal heuristics."
             )
             external_check = "error"
             external_record = None
         except Exception as exc:  # noqa: BLE001
             logger.warning(
-                "OpenAlex check error (%s); falling back to internal heuristics.",
+                "OpenAlex DOI error (%s); falling back to title search or internal heuristics.",
+                type(exc).__name__,
+            )
+            external_check = "error"
+            external_record = None
+
+    # Step 2: Universal Full-Text Title Search (Fallback if no DOI or DOI not matched)
+    if external_check != "matched" and title:
+        try:
+            fallback_record = await fetch_openalex_by_title(title, client=http_client)
+            if fallback_record:
+                ext_title = fallback_record.get("title", "")
+                sim = token_set_ratio(title, ext_title)
+                if sim >= 0.80:
+                    external_record = fallback_record
+                    title_similarity = sim
+                    external_check = "matched"
+                elif external_check != "error":
+                    external_check = "not_matched"
+            elif external_check != "error":
+                external_check = "not_matched"
+        except (TimeoutError, httpx.TimeoutException):
+            logger.warning(
+                "OpenAlex title search timeout (> 2.5s); falling back to internal heuristics."
+            )
+            external_check = "error"
+            external_record = None
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "OpenAlex title search error (%s); falling back to internal heuristics.",
                 type(exc).__name__,
             )
             external_check = "error"
