@@ -52,8 +52,9 @@ class DocumentCredibility(Base):
     disclaimer: Mapped[str] = mapped_column(
         Text,
         default=(
-            "This score reflects structural reporting signals and database matches, "
-            "not scientific validity."
+            "External metrics verified via OpenAlex Global Academic Registry. "
+            "This score reflects structural reporting signals and database records, "
+            "not scientific correctness."
         ),
         nullable=False,
     )

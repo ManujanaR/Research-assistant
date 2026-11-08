@@ -291,8 +291,7 @@ export function CredibilityCard({ docHash }: CredibilityCardProps) {
 
       {/* Required Disclaimer Subtext */}
       <p className="text-[10px] text-text-muted leading-relaxed italic pt-0.5">
-        {disclaimer ||
-          "Reporting signals score. Does not verify experimental correctness or research quality."}
+        External metrics verified via OpenAlex Global Academic Registry. This score reflects structural reporting signals and database records, not scientific correctness.
       </p>
     </div>
   );

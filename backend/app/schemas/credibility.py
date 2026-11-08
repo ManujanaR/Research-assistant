@@ -48,6 +48,7 @@ class CredibilityResponse(BaseModel):
     badge_variant: Literal["success", "warning", "neutral"] = "neutral"
     signals: CredibilitySignals = Field(default_factory=CredibilitySignals)
     disclaimer: str = (
-        "This score reflects structural reporting signals and database matches, "
-        "not scientific validity."
+        "External metrics verified via OpenAlex Global Academic Registry. "
+        "This score reflects structural reporting signals and database records, "
+        "not scientific correctness."
     )
