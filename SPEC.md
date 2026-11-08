@@ -32,7 +32,7 @@ Authentication and per-user document ownership are in scope; see section 9.
      - HTTP Status: `413 Payload Too Large`.
      - Error Message: `"File exceeds maximum allowed size of {MAX_UPLOAD_MB}MB."`
   3. **Extractable Text Check (Scanned/Empty PDF Detection)**:
-     - PyMuPDF (`fitz`) attempts text extraction across all pages. If total extracted character count across the document is 0 (or strictly whitespace), reject the file.
+     - If the PDF has no text layer, run OCR on the page images. If OCR produces no text, return 422 with the existing message. If OCR runs, record ocr_used: true in the upload response.
      - HTTP Status: `422 Unprocessable Entity`.
      - Error Message: `"The uploaded PDF contains no extractable text. Scanned documents or image-only PDFs are not supported."`
 - **File Lifecycle & Cleanup**:

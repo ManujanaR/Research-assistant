@@ -194,6 +194,7 @@ sequenceDiagram
 
 - **Python**: 3.11 or later
 - **Node.js**: 20.9 or later
+- **Tesseract OCR**: Required on the host system to process scanned or image-only PDFs (`tesseract-ocr` on Ubuntu/Debian, `tesseract` on Fedora/macOS).
 - **OpenAI API Key**: Required for live summarization, query rewriting, and chat answering. (All test suites run completely offline with mocked providers.)
 
 ---
@@ -344,4 +345,4 @@ The script reports group distances and suggests an optimal cutoff threshold.
 
 - **Single-Server SQLite**: User records and document ownership are stored in local SQLite (`data/app.db`), optimized for single-instance deployments.
 - **In-Memory Rate Limiting**: The authentication failure rate limiter maintains state in memory and resets upon server restart.
-- **Scanned / OCR-only PDFs**: PDFs without a selectable text layer (e.g. image scans without OCR) are rejected with a 422 error, prompting the user to supply an OCR-processed or text-based PDF.
+- **Scanned PDFs & OCR**: Scanned PDFs are processed with OCR. Accuracy depends on scan quality. OCR is slower than text extraction.
