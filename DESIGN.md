@@ -165,15 +165,18 @@ Default theme: light.
 ### 4.6 Document Credibility & Reporting Signals Card (Left Column)
 
 * **Layout Placement:** Located in the **Left Sidebar ("Sources" panel), positioned directly below the "+ Add PDF Document" button and uploaded document item** (above "Convert other files"). The right sidebar remains dedicated exclusively to the five-part Summary.
-* **Primary Display:** A clean 5-row visual signal checklist (Venue, Citations, References, Author Affiliation, Structure) without an overarching letter or single-grade headline. The composite score is displayed strictly as a small secondary figure at the bottom of the card.
+* **Primary Display:** A clean 5-row visual signal checklist (Venue/Host, Citations, References, Affiliations, Structure) with clear status badges based on OpenAlex indexing and reporting scores:
+  * **Score >= 75:** `"Indexed in OpenAlex"` (Green badge)
+  * **Score 55–74:** `"Preprint Series"` (Yellow badge)
+  * **Score < 55:** `"Unindexed Draft"` (Neutral badge)
 * **Detail State Transitions:**
   * **Empty state (no document uploaded):** Card is hidden.
   * **Processing state:** Skeleton / spinner with *"Analyzing publication signals..."*.
   * **Completed state:** 5-row signal checklist with badge and secondary score figure.
   * **Timeout (> 30s) / Error state:** *"Analysis unavailable"*.
-* **Reporting Disclaimer:** Subtext clearly visible on the card: *"Reporting signals score. Does not verify experimental correctness or research quality."*
+* **Reporting Disclaimer:** Subtext clearly visible on the card: *"This score reflects structural reporting signals and database matches, not scientific validity."*
 * **Estimated References Tooltip:** If estimated references count is under 20, render an *"Estimated from layout"* tooltip.
-* **Author Affiliation Shape:** 10 points awarded when author contact lines match academic domain pattern shapes (`.edu`, `.edu.<country_code>`, `.ac`, `.ac.<country_code>`, `.gov`, `.gov.<country_code>`). Verifies domain pattern shape, not institutional authentication.
+* **Author Affiliation Shape:** Awarded when verified via OpenAlex institutional affiliations or when author contact lines match academic domain patterns (`.edu`, `.edu.<country_code>`, `.ac`, `.ac.<country_code>`, `.gov`, `.gov.<country_code>`). Verifies domain pattern shape and global registry metadata, not institutional authentication.
 
 ## 4.7 Export
 

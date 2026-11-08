@@ -125,7 +125,7 @@ Q&A:
 Credibility and reporting signals:
 - Process credibility in the background without blocking the upload or summary response.
 - External network transmission constraints:
-  * Only the extracted document Title, DOI, or arXiv identifier may be transmitted to external verification APIs (Crossref, Semantic Scholar).
+  * Only outbound queries to the OpenAlex Works API (`api.openalex.org`) using strictly the extracted document Title or DOI string are permitted.
   * The document body text, extracted chunks, chat history, and user IDs must NEVER be sent to external services.
 - Dynamic header metadata extraction:
   * The dynamic header extraction uses an internal structured call on text already parsed by the application. It receives STRICTLY the isolated Page 1 header block (never the document body) and does not transmit data to external third parties.
@@ -133,7 +133,7 @@ Credibility and reporting signals:
 ## Things to avoid
 
 - Do not send the paper to any service other than the configured LLM provider.
-- Do not transmit document body text, extracted chunks, chat history, or user IDs to external verification services (Crossref, Semantic Scholar). Only Title, DOI, or arXiv identifier may be queried.
+- Do not transmit document body text, extracted chunks, chat history, or user IDs to external verification services (such as OpenAlex or other registries). Only Title or DOI string may be queried.
 - Do not store uploaded PDFs permanently unless a feature needs them. Keep them in a temp directory and clean up.
 - Do not expose API keys to the frontend. All LLM calls happen in the backend.
 - Do not rewrite working code for style alone.
