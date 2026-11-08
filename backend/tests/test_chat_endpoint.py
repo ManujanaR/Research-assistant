@@ -279,6 +279,9 @@ def test_grounding_fallback_verbatim_in_system_and_stream(
     token_texts = [e["data"]["text"] for e in events if e["event"] == "token"]
     streamed_full_answer = "".join(token_texts)
     assert streamed_full_answer == FALLBACK_GROUNDING_MESSAGE
+    sources_events = [e for e in events if e["event"] == "sources"]
+    assert len(sources_events) == 1
+    assert sources_events[0]["data"] == []
 
 
 def test_sse_format_and_ordering(
@@ -606,3 +609,93 @@ def test_extract_sources_deduplication() -> None:
     assert len(sources) == 2
     assert sources[0].page_number == 1
     assert sources[1].page_number == 2
+
+
+def test_grounded_answer_sends_at_most_three_sources(
+    auth_client: AuthenticatedTestClient, tmp_path: Path
+) -> None:
+    """A grounded answer sends at most 3 sources, taking top 3 by distance among chunks passing threshold."""
+    doc_hash = "8" * 64
+    chroma_dir = tmp_path / "chroma_test"
+    chroma_client = chromadb.PersistentClient(path=str(chroma_dir))
+    embedder = SimpleCountingEmbedder()
+
+    chunks_data = [
+        {
+            "text": f"Result sentence number {i} discussing deep neural networks.",
+            "page": i,
+        }
+        for i in range(1, 6)
+    ]
+    asyncio.run(
+        index_document(
+            doc_hash=doc_hash,
+            chunks=chunks_data,
+            embed_fn=embedder,
+            client=chroma_client,
+        )
+    )
+    auth_client.record_ownership(doc_hash)
+
+    fake_client = FakeChatClient(
+        stream_factory=lambda **_: FakeChatStream(tokens=["Here are the key results."])
+    )
+
+    app.dependency_overrides[get_chroma_client] = lambda: chroma_client
+    app.dependency_overrides[get_embedding_function] = lambda: embedder
+    app.dependency_overrides[get_chat_llm_client] = lambda: fake_client
+
+    response = auth_client.post(
+        "/api/chat",
+        json={
+            "doc_hash": doc_hash,
+            "message": "What were the key results for deep neural networks?",
+        },
+    )
+    assert response.status_code == 200
+    events = parse_sse_events(response.text)
+    sources_events = [e for e in events if e["event"] == "sources"]
+    assert len(sources_events) == 1
+    sources_data = sources_events[0]["data"]
+    assert len(sources_data) <= 3
+    assert len(sources_data) == 3
+
+
+def test_small_talk_and_greetings_send_no_sources(
+    auth_client: AuthenticatedTestClient, tmp_path: Path
+) -> None:
+    """Greetings and small talk ('thank you') send an empty sources array."""
+    doc_hash = "9" * 64
+    chroma_dir = tmp_path / "chroma_test"
+    chroma_client = chromadb.PersistentClient(path=str(chroma_dir))
+    embedder = SimpleCountingEmbedder()
+
+    asyncio.run(
+        index_document(
+            doc_hash=doc_hash,
+            chunks=[{"text": "Relevant paper text.", "page": 1}],
+            embed_fn=embedder,
+            client=chroma_client,
+        )
+    )
+    auth_client.record_ownership(doc_hash)
+
+    fake_client = FakeChatClient(
+        stream_factory=lambda **_: FakeChatStream(
+            tokens=["You're welcome! Let me know if you need more help."]
+        )
+    )
+
+    app.dependency_overrides[get_chroma_client] = lambda: chroma_client
+    app.dependency_overrides[get_embedding_function] = lambda: embedder
+    app.dependency_overrides[get_chat_llm_client] = lambda: fake_client
+
+    response = auth_client.post(
+        "/api/chat",
+        json={"doc_hash": doc_hash, "message": "thank you"},
+    )
+    assert response.status_code == 200
+    events = parse_sse_events(response.text)
+    sources_events = [e for e in events if e["event"] == "sources"]
+    assert len(sources_events) == 1
+    assert sources_events[0]["data"] == []

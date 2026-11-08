@@ -110,7 +110,8 @@ async def chat(
     relevant_chunks = [
         c for c in chunks if c.distance <= settings.citation_max_distance
     ]
-    sources = extract_sources(relevant_chunks, question=request.message)
+    sorted_relevant = sorted(relevant_chunks, key=lambda c: c.distance)
+    sources = extract_sources(sorted_relevant, question=request.message, max_sources=3)
     messages = assemble_chat_messages(
         question=request.message,
         history=request.history,
@@ -122,6 +123,7 @@ async def chat(
             messages=messages,
             sources=sources,
             client=llm_client,
+            question=request.message,
         ),
         media_type="text/event-stream",
     )

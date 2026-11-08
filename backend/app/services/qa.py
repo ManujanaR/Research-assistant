@@ -342,13 +342,86 @@ def extract_snippet(chunk_text: str, question: str = "", max_chars: int = 200) -
     return eligible[0]
 
 
+GREETING_OR_SMALLTALK_PATTERNS = [
+    # Gratitude
+    r"^(thanks?|thank\s+you)(\s+(so\s+much|very\s+much|a\s+lot|again|for\s+your\s+help|for\s+helping|for\s+the\s+help))?$",
+    r"^(many\s+thanks|thx|ty|much\s+appreciated|greatly\s+appreciated|appreciate\s+it)$",
+    # Greetings
+    r"^(hi|hello|hey|howdy|greetings|hola)(\s+(there|assistant|bot|mitra))?$",
+    r"^good\s+(morning|afternoon|evening|day)(\s+(there|assistant|bot|mitra))?$",
+    # Farewells
+    r"^(bye|goodbye|see\s+ya|see\s+you|farewell|cya)$",
+    r"^have\s+a\s+(good|nice|great)\s+(day|night|one)$",
+    # Small talk queries
+    r"^(how\s+are\s+you|who\s+are\s+you|what\s+are\s+you|what\s+can\s+you\s+do|what\s+is\s+your\s+name|tell\s+me\s+about\s+yourself)$",
+    # Acknowledgments
+    r"^(ok|okay|cool|great|awesome|got\s+it|understood|nice|perfect|alright|fine|sure)$",
+]
+
+REPLY_NO_PASSAGES_PATTERNS = [
+    # Fallback / ungrounded replies
+    r"does not contain information to answer this question",
+    r"the uploaded paper does not contain",
+    r"(the\s+)?(paper|text|excerpts?|document)\s+(does|do)\s+not\s+(contain|mention|state|discuss|provide)",
+    r"not\s+(found|mentioned|stated|discussed|provided)\s+in\s+the\s+(paper|text|excerpts?|document)",
+    r"there\s+is\s+no\s+(mention|information|evidence)\s+(of|about|in)",
+    r"i\s+(cannot|can't|am\s+unable\s+to)\s+(find|answer|determine)",
+    # Pleasantry replies
+    r"^(you('re|\s+are)\s+welcome|happy\s+to\s+help|glad\s+to\s+help|my\s+pleasure|anytime|no\s+problem|don't\s+mention\s+it)\b",
+    r"^(hello|hi|hey|greetings)[\s,!.]+(how\s+can\s+i|what\s+can\s+i|how\s+may\s+i|i\s+am|i'm)\b",
+    r"^(i\s+am|i'm)\s+an?\s+(ai|research|helpful)\b",
+    r"^(good\s+(morning|afternoon|evening|day))\b",
+]
+
+
+def is_greeting_or_smalltalk(text: str) -> bool:
+    """Check if text is a greeting, small talk, or conversational pleasantry."""
+    if not text:
+        return False
+    normalized = re.sub(r"[^\w\s]", "", text.strip().lower())
+    for pattern in GREETING_OR_SMALLTALK_PATTERNS:
+        if re.search(pattern, normalized):
+            return True
+    return False
+
+
+def is_unusable_or_negative_reply(answer: str) -> bool:
+    """Check if an answer is the fallback sentence, small talk, or indicates excerpts were not used."""
+    if not answer or not answer.strip():
+        return True
+    clean = answer.strip()
+    if clean == FALLBACK_GROUNDING_MESSAGE.strip():
+        return True
+    lower = clean.lower()
+    for pattern in REPLY_NO_PASSAGES_PATTERNS:
+        if re.search(pattern, lower):
+            return True
+    return False
+
+
+def should_send_sources(
+    answer: str,
+    sources: list[ChatSource],
+    question: str = "",
+) -> bool:
+    """Return True only if the answer is grounded, not small talk/greeting/fallback, and used retrieved passages."""
+    if not sources:
+        return False
+    if is_greeting_or_smalltalk(question):
+        return False
+    if is_greeting_or_smalltalk(answer):
+        return False
+    return not is_unusable_or_negative_reply(answer)
+
+
 def extract_sources(
-    chunks: list[RetrievedChunk], question: str = ""
+    chunks: list[RetrievedChunk], question: str = "", max_sources: int = 3
 ) -> list[ChatSource]:
-    """Deduplicate sources by (page_number, snippet) preserving retrieval order."""
+    """Deduplicate sources by (page_number, snippet) preserving distance order, returning at most max_sources."""
+    sorted_chunks = sorted(chunks, key=lambda c: c.distance)
     sources: list[ChatSource] = []
     seen: set[tuple[int | None, str]] = set()
-    for chunk in chunks:
+    for chunk in sorted_chunks:
         snippet = extract_snippet(chunk.text, question=question)
         if not snippet:
             continue
@@ -356,6 +429,8 @@ def extract_sources(
         if key not in seen:
             seen.add(key)
             sources.append(ChatSource(page_number=chunk.page, snippet=snippet))
+            if len(sources) >= max_sources:
+                break
     return sources
 
 
@@ -389,6 +464,7 @@ async def stream_chat_response(
     messages: list[dict[str, str]],
     sources: list[ChatSource],
     client: Any,
+    question: str = "",
 ) -> AsyncIterator[str]:
     """Stream chat response tokens, followed by sources and completion signal in SSE format."""
     settings = get_settings()
@@ -418,11 +494,10 @@ async def stream_chat_response(
                 full_answer += delta
                 yield f"event: token\ndata: {json.dumps({'text': delta})}\n\n"
 
-        is_fallback = full_answer.strip() == FALLBACK_GROUNDING_MESSAGE.strip()
-        if not sources or is_fallback:
+        if not should_send_sources(full_answer, sources, question=question):
             sources_payload: list[dict[str, Any]] = []
         else:
-            sources_payload = [s.model_dump() for s in sources]
+            sources_payload = [s.model_dump() for s in sources[:3]]
 
         yield f"event: sources\ndata: {json.dumps(sources_payload)}\n\n"
         yield f"event: done\ndata: {json.dumps({})}\n\n"
