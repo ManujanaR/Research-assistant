@@ -18,7 +18,6 @@ import { ChatPanel } from "./ChatPanel";
 import { ExportButton } from "./ExportButton";
 import { ThemeToggle } from "./ThemeToggle";
 import { AuthPanel } from "./AuthPanel";
-import { SignOutButton } from "./SignOutButton";
 import { ConvertLink } from "./ConvertLink";
 import { ProfileMenu } from "./ProfileMenu";
 import { ProfileForm } from "./ProfileForm";
@@ -1098,7 +1097,7 @@ describe("Frontend UI Components", () => {
       expect(screen.queryByTestId("desktop-workspace")).toBeNull();
     });
 
-    it("sign-out returns to the sign-in page", async () => {
+    it("sign-out returns to the sign-in page via avatar menu", async () => {
       vi.mocked(getMe).mockResolvedValueOnce({
         id: "user-1",
         email: "logged_in@example.com",
@@ -1108,13 +1107,33 @@ describe("Frontend UI Components", () => {
       render(<Home />);
       expect(await screen.findByTestId("desktop-workspace")).toBeDefined();
 
-      const signOutBtn = await screen.findByTestId("sign-out-btn");
+      const avatar = await screen.findByTestId("profile-avatar");
+      fireEvent.click(avatar);
+
+      const menuEmail = await screen.findByTestId("profile-menu-email");
+      expect(menuEmail.textContent).toBe("logged_in@example.com");
+
+      const signOutBtn = await screen.findByTestId("menu-item-sign-out");
       fireEvent.click(signOutBtn);
 
       await waitFor(() => {
         expect(screen.getByTestId("auth-page")).toBeDefined();
       });
       expect(screen.queryByTestId("desktop-workspace")).toBeNull();
+    });
+
+    it("top bar has no standalone Sign out button or email display", async () => {
+      vi.mocked(getMe).mockResolvedValueOnce({
+        id: "user-1",
+        email: "logged_in@example.com",
+      });
+
+      render(<Home />);
+      expect(await screen.findByTestId("desktop-workspace")).toBeDefined();
+
+      expect(screen.queryByTestId("sign-out-btn")).toBeNull();
+      expect(screen.queryByTestId("user-email-display")).toBeNull();
+      expect(screen.queryByTestId("user-session-controls")).toBeNull();
     });
   });
 
