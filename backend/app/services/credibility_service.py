@@ -1,4 +1,4 @@
-"""Asynchronous Document Credibility & Reporting Signals Service."""
+"""Asynchronous Document Credibility & Reporting Signals Service using OpenAlex."""
 
 import json
 import logging
@@ -9,15 +9,15 @@ from typing import Any
 import httpx
 from sqlalchemy.orm import Session
 
-from app.core.config import get_settings
 from app.models.credibility import DocumentCredibility
 from app.schemas.credibility import CredibilitySignals
 from app.services.credibility_cache import CredibilityCache
 
 logger = logging.getLogger(__name__)
 
-# Strict 2.0s timeout for external verification requests
-EXTERNAL_API_TIMEOUT_SECONDS = 2.0
+# Strict 2.5s timeout for OpenAlex API requests
+OPENALEX_TIMEOUT_SECONDS = 2.5
+EXTERNAL_API_TIMEOUT_SECONDS = 2.5
 
 # Regex patterns
 DOI_REGEX = re.compile(r"\b10\.\d{4,9}/[-._;()/:A-Za-z0-9]+\b")
@@ -98,7 +98,6 @@ def extract_title_from_page_1(page_1_text: str) -> str | None:
         cleaned = " ".join(p.split())
         # First prominent text block of substantive length
         if len(cleaned) >= 12 and not cleaned.isdigit():
-            # Return first line or full title block under 250 chars
             lines = [line.strip() for line in p.splitlines() if line.strip()]
             candidate = " ".join(lines[:3]) if len(lines) > 1 else lines[0]
             return candidate[:250].strip()
@@ -114,7 +113,6 @@ def extract_doi(page_1_text: str) -> str | None:
     if not page_1_text:
         return None
 
-    # Identify potential references section if on page 1
     ref_idx = -1
     for match in re.finditer(
         r"\b(references|bibliography|works cited)\b", page_1_text, re.IGNORECASE
@@ -125,20 +123,17 @@ def extract_doi(page_1_text: str) -> str | None:
     target_text = page_1_text[:ref_idx] if ref_idx != -1 else page_1_text
     lines = target_text.splitlines()
 
-    # Split lines into top header (first 30%), bottom footer (last 20%), or explicit DOI lines
     n = len(lines)
     header_lines = lines[: max(5, int(n * 0.3))]
     footer_lines = lines[max(0, int(n * 0.8)) :]
 
     candidate_lines = header_lines + footer_lines
 
-    # Also search for lines that start with DOI metadata prefixes
     for line in lines:
         if re.search(r"\bdoi\b", line, re.IGNORECASE) and line not in candidate_lines:
             candidate_lines.append(line)
 
     for line in candidate_lines:
-        # Critical guard: exclude lines that look like footnotes (e.g. starts with footnote numbers/asterisks and names)
         if re.match(
             r"^[\*†‡\d]+\s*(author|correspondence|electronic address)",
             line,
@@ -163,110 +158,86 @@ def extract_arxiv_id(page_1_text: str) -> str | None:
     return None
 
 
-async def fetch_crossref_record(
-    doi: str, client: httpx.AsyncClient | None = None
-) -> dict[str, Any] | None:
-    """Query Crossref Works API for a given DOI with a strict 2.0s timeout."""
-    cache = get_credibility_cache()
-    cache_key = f"cred:doi:{doi.lower()}"
-    cached = cache.get(cache_key)
-    if cached is not None:
-        return cached
-
-    url = f"https://api.crossref.org/works/{doi}"
-    headers = {"User-Agent": "ResearchAssistant/1.0 (mailto:support@example.com)"}
-
-    close_client = False
-    if client is None:
-        client = httpx.AsyncClient(timeout=EXTERNAL_API_TIMEOUT_SECONDS)
-        close_client = True
-
-    try:
-        resp = await client.get(url, headers=headers)
-        if resp.status_code == 200:
-            msg = resp.json().get("message", {})
-            title = ""
-            titles = msg.get("title", [])
-            if titles and isinstance(titles, list):
-                title = titles[0]
-            venue = ""
-            venues = msg.get("container-title", [])
-            if venues and isinstance(venues, list):
-                venue = venues[0]
-            elif msg.get("publisher"):
-                venue = msg.get("publisher", "")
-
-            # Year extraction
-            year = None
-            date_parts = (
-                msg.get("published-print", {}).get("date-parts")
-                or msg.get("published-online", {}).get("date-parts")
-                or msg.get("created", {}).get("date-parts")
-            )
-            if date_parts and isinstance(date_parts, list) and date_parts[0]:
-                year = date_parts[0][0]
-
-            citations = int(msg.get("is-referenced-by-count", 0))
-
-            record = {
-                "title": title,
-                "venue": venue,
-                "year": year,
-                "citation_count": citations,
-                "source": "Crossref",
-            }
-            cache.set(cache_key, record)
-            return record
-        elif resp.status_code == 404:
-            return None
-    except Exception as exc:
-        logger.warning("Crossref API request failed (%s)", type(exc).__name__)
-        raise
-    finally:
-        if close_client:
-            await client.aclose()
-
-    return None
-
-
-async def fetch_semantic_scholar_record(
+async def fetch_openalex_record(
     title: str, client: httpx.AsyncClient | None = None
 ) -> dict[str, Any] | None:
-    """Query Semantic Scholar Graph API for a paper title with a strict 2.0s timeout."""
-    settings = get_settings()
+    """Query OpenAlex Works API for a given paper title with a strict 2.5s timeout.
+
+    Privacy & Grounding Constraints:
+    - Queries STRICTLY the clean title string. Document body, chunks, user identity,
+      and chat turns are never sent.
+    """
+    clean_title = normalize_string(title)
+    if not clean_title:
+        return None
+
     cache = get_credibility_cache()
-    cache_key = f"cred:title:{normalize_string(title)}"
+    cache_key = f"cred:openalex:{clean_title}"
     cached = cache.get(cache_key)
     if cached is not None:
         return cached
 
-    url = "https://api.semanticscholar.org/graph/v1/paper/search"
+    url = "https://api.openalex.org/works"
     params = {
-        "query": title,
-        "limit": "1",
-        "fields": "title,venue,year,citationCount",
+        "filter": f"title.search:{clean_title}",
+        "per-page": "1",
     }
-    headers: dict[str, str] = {}
-    if settings.semantic_scholar_api_key and settings.semantic_scholar_api_key.strip():
-        headers["x-api-key"] = settings.semantic_scholar_api_key.strip()
+    headers = {
+        "User-Agent": "ResearchAssistantApp/1.0 (mailto:support@local.app)",
+        "Accept": "application/json",
+    }
 
     close_client = False
     if client is None:
-        client = httpx.AsyncClient(timeout=EXTERNAL_API_TIMEOUT_SECONDS)
+        client = httpx.AsyncClient(timeout=OPENALEX_TIMEOUT_SECONDS)
         close_client = True
 
     try:
         resp = await client.get(url, params=params, headers=headers)
         if resp.status_code == 200:
-            data = resp.json().get("data", [])
-            if data and isinstance(data, list):
-                item = data[0]
+            data = resp.json()
+            results = data.get("results", [])
+            if results and isinstance(results, list):
+                item = results[0]
+                found_title = item.get("display_name") or item.get("title") or ""
+
+                # Venue / Source
+                primary_loc = item.get("primary_location") or {}
+                source_obj = primary_loc.get("source") or {}
+                venue = source_obj.get("display_name") or ""
+                if not venue:
+                    host_venue = item.get("host_venue") or {}
+                    venue = (
+                        host_venue.get("display_name") or host_venue.get("name") or ""
+                    )
+
+                # Citation Count
+                citation_count = int(item.get("cited_by_count", 0) or 0)
+
+                # Affiliations: Extract authorships[].institutions[].display_name
+                has_institution = False
+                for authorship in item.get("authorships", []):
+                    for inst in authorship.get("institutions", []):
+                        if inst.get("display_name"):
+                            has_institution = True
+                            break
+                    if has_institution:
+                        break
+
+                pub_year = item.get("publication_year")
+
+                item_doi = item.get("doi")
+                if item_doi and item_doi.startswith("https://doi.org/"):
+                    item_doi = item_doi[len("https://doi.org/") :]
+
                 record = {
-                    "title": item.get("title", ""),
-                    "venue": item.get("venue", "") or "",
-                    "year": item.get("year"),
-                    "citation_count": int(item.get("citationCount", 0) or 0),
-                    "source": "Semantic Scholar",
+                    "title": found_title,
+                    "venue": venue,
+                    "year": pub_year,
+                    "citation_count": citation_count,
+                    "has_institution": has_institution,
+                    "doi": item_doi,
+                    "source": "OpenAlex",
                 }
                 cache.set(cache_key, record)
                 return record
@@ -274,7 +245,7 @@ async def fetch_semantic_scholar_record(
         elif resp.status_code == 404:
             return None
     except Exception as exc:
-        logger.warning("Semantic Scholar API request failed (%s)", type(exc).__name__)
+        logger.warning("OpenAlex API request failed (%s)", type(exc).__name__)
         raise
     finally:
         if close_client:
@@ -296,13 +267,11 @@ def estimate_references_count(full_text: str) -> int:
     if not ref_matches:
         return 0
 
-    # Look in the text starting from the last references header
     bib_text = full_text[ref_matches[-1].start() :]
 
     # Count bracketed numbers: [1], [2], etc.
     bracketed = re.findall(r"\[\d{1,3}\]", bib_text)
     if len(bracketed) >= 5:
-        # Return highest number or unique count
         nums = [int(m.strip("[]")) for m in bracketed if m.strip("[]").isdigit()]
         if nums:
             return max(len(set(nums)), min(max(nums), len(bracketed)))
@@ -330,13 +299,14 @@ def calculate_credibility_score(
     page_1_text: str,
     reference_count: int,
 ) -> tuple[int, CredibilitySignals, str, str]:
-    """Calculate the 100-point base score + 5-point bonus according to scoring rules."""
+    """Calculate the 100-point base score + 5-point bonus according to OpenAlex & reporting rules."""
     current_year = datetime.now(UTC).year
 
-    # 1. Venue Match (35 pts)
+    # 1. Venue / Indexing (35 pts)
+    # Confirmed record in OpenAlex with Token-Set Ratio >= 0.85
     venue_pts = 35 if external_check == "matched" else 0
 
-    # 2. Citation Factor (25 pts)
+    # 2. Citations (25 pts)
     citation_count = external_record.get("citation_count", 0) if external_record else 0
     pub_year = external_record.get("year") if external_record else None
     if pub_year is not None and isinstance(pub_year, int):
@@ -345,13 +315,13 @@ def calculate_credibility_score(
         age = 1  # Recent default if unknown
 
     if age <= 2:
+        # If paper published within last 2 years: award 15 pts baseline for new work
         if citation_count >= 5:
             citation_pts = 25
-        elif citation_count >= 1:
-            citation_pts = 20
         else:
-            citation_pts = 15  # Age-normalized baseline
+            citation_pts = 15
     else:
+        # Established papers: >= 5 cites = 25 pts, 1-4 cites = 15 pts, 0 cites = 5 pts
         if citation_count >= 5:
             citation_pts = 25
         elif citation_count >= 1:
@@ -359,34 +329,47 @@ def calculate_credibility_score(
         else:
             citation_pts = 5
 
-    # 3. Reference List Depth (20 pts)
+    # 3. Estimated References (20 pts)
+    # >= 20 entries = 20 pts, 10-19 entries = 15 pts, < 10 = 5 pts
     if reference_count >= 20:
         ref_pts = 20
     elif reference_count >= 10:
-        ref_pts = 10
+        ref_pts = 15
     else:
         ref_pts = 5
 
     # 4. Academic Affiliation (10 pts)
-    has_academic_affiliation = bool(ACADEMIC_DOMAIN_REGEX.search(page_1_text))
+    # Confirmed via OpenAlex institutions or academic email regex (.edu, .ac.*, .gov)
+    has_openalex_inst = (
+        bool(external_record.get("has_institution")) if external_record else False
+    )
+    has_regex_affiliation = bool(ACADEMIC_DOMAIN_REGEX.search(page_1_text))
+    has_academic_affiliation = has_openalex_inst or has_regex_affiliation
     affiliation_pts = 10 if has_academic_affiliation else 0
 
     # 5. Structural Rigor (10 pts)
+    # Core sections: Abstract, Methodology, Results, Discussion / Limitations
     has_abstract = bool(re.search(r"\babstract\b", page_1_text[:2000], re.IGNORECASE))
     has_methodology = bool(
         re.search(
-            r"\b(methodology|methods|materials and methods)\b", full_text, re.IGNORECASE
+            r"\b(methodology|methods|materials and methods)\b",
+            full_text,
+            re.IGNORECASE,
         )
     )
     has_results = bool(
         re.search(r"\b(results|findings|evaluation)\b", full_text, re.IGNORECASE)
     )
-    has_limitations = bool(
-        re.search(r"\b(limitations?|threats to validity)\b", full_text, re.IGNORECASE)
+    has_discussion = bool(
+        re.search(
+            r"\b(discussion|limitations?|threats to validity)\b",
+            full_text,
+            re.IGNORECASE,
+        )
     )
 
     structure_sections = sum(
-        [has_abstract, has_methodology, has_results, has_limitations]
+        [has_abstract, has_methodology, has_results, has_discussion]
     )
     structure_pts = min(10, int(structure_sections * 2.5))
 
@@ -401,27 +384,21 @@ def calculate_credibility_score(
 
     total_score = min(105, base_score + bonus_pts)
 
-    # Badges
-    matched_venue = external_record.get("venue", "") if external_record else None
-    if external_check == "matched":
-        source_name = (
-            external_record.get("source", "Crossref") if external_record else "Crossref"
-        )
-        if matched_venue and any(
-            p in matched_venue.lower()
-            for p in ["arxiv", "biorxiv", "medrxiv", "preprint"]
-        ):
-            badge_label = "Preprint / Self-Archived"
-            badge_variant = "warning"
-        elif matched_venue:
-            badge_label = f"Venue Matched in {source_name}"
-            badge_variant = "success"
-        else:
-            badge_label = "Preprint / Self-Archived"
-            badge_variant = "warning"
+    # Status Badges:
+    # Score >= 75: "Indexed in OpenAlex" (Green)
+    # Score 55-74: "Preprint Series" (Yellow)
+    # Score < 55: "Unindexed Draft" (Neutral)
+    if total_score >= 75:
+        badge_label = "Indexed in OpenAlex"
+        badge_variant = "success"
+    elif total_score >= 55:
+        badge_label = "Preprint Series"
+        badge_variant = "warning"
     else:
-        badge_label = "Venue Unverified"
+        badge_label = "Unindexed Draft"
         badge_variant = "neutral"
+
+    matched_venue = external_record.get("venue", "") if external_record else None
 
     signals = CredibilitySignals(
         has_doi=has_doi,
@@ -434,8 +411,18 @@ def calculate_credibility_score(
         reference_count_estimated=reference_count,
         is_reference_count_estimated=True,
         author_academic_affiliation=has_academic_affiliation,
-        has_limitations_section=has_limitations,
+        has_limitations_section=has_discussion,
         open_artifacts_detected=open_artifacts_detected,
+        structure_sections_found=structure_sections,
+        venue_points=venue_pts,
+        citation_points=citation_pts,
+        reference_points=ref_pts,
+        affiliation_points=affiliation_pts,
+        structure_points=structure_pts,
+        bonus_points=bonus_pts,
+        estimated_references=reference_count,
+        recorded_citations=citation_count,
+        has_academic_affiliation=has_academic_affiliation,
     )
 
     return total_score, signals, badge_label, badge_variant
@@ -448,7 +435,7 @@ async def evaluate_document_credibility(
     full_text: str | None = None,
     http_client: httpx.AsyncClient | None = None,
 ) -> DocumentCredibility:
-    """Asynchronously evaluate publication and reporting signals for a document."""
+    """Asynchronously evaluate publication and reporting signals for a document using OpenAlex."""
     from app.services.qa import rebuild_text_from_chroma
 
     # If full text not provided, rebuild from Chroma
@@ -473,7 +460,6 @@ async def evaluate_document_credibility(
 
     title = extract_title_from_page_1(page_1_text)
     doi = extract_doi(page_1_text)
-    arxiv_id = extract_arxiv_id(page_1_text)
 
     external_check = "skipped"
     external_record: dict[str, Any] | None = None
@@ -483,42 +469,25 @@ async def evaluate_document_credibility(
         external_check = "skipped"
     else:
         try:
-            if doi:
-                external_record = await fetch_crossref_record(doi, client=http_client)
-                if external_record:
-                    external_record["doi"] = doi
-                    ext_title = external_record.get("title", "")
-                    title_similarity = token_set_ratio(title, ext_title)
-                    if title_similarity >= 0.85:
-                        external_check = "matched"
-                    else:
-                        external_check = "not_matched"
+            external_record = await fetch_openalex_record(title, client=http_client)
+            if external_record:
+                ext_title = external_record.get("title", "")
+                title_similarity = token_set_ratio(title, ext_title)
+                if title_similarity >= 0.85:
+                    external_check = "matched"
                 else:
                     external_check = "not_matched"
             else:
-                # Query Semantic Scholar by title
-                query_title = title if not arxiv_id else f"{title} {arxiv_id}"
-                external_record = await fetch_semantic_scholar_record(
-                    query_title, client=http_client
-                )
-                if external_record:
-                    ext_title = external_record.get("title", "")
-                    title_similarity = token_set_ratio(title, ext_title)
-                    if title_similarity >= 0.85:
-                        external_check = "matched"
-                    else:
-                        external_check = "not_matched"
-                else:
-                    external_check = "not_matched"
+                external_check = "not_matched"
         except (TimeoutError, httpx.TimeoutException):
             logger.warning(
-                "External credibility API timeout (> 2.0s); falling back to internal heuristics."
+                "OpenAlex API timeout (> 2.5s); falling back to internal heuristics."
             )
             external_check = "error"
             external_record = None
         except Exception as exc:  # noqa: BLE001
             logger.warning(
-                "External credibility check error (%s); falling back to internal heuristics.",
+                "OpenAlex check error (%s); falling back to internal heuristics.",
                 type(exc).__name__,
             )
             external_check = "error"

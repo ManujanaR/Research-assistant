@@ -20,6 +20,20 @@ class CredibilitySignals(BaseModel):
     author_academic_affiliation: bool = False
     has_limitations_section: bool = False
     open_artifacts_detected: bool = False
+    structure_sections_found: int = 0
+
+    # Points breakdown for UI checklist
+    venue_points: int = 0
+    citation_points: int = 0
+    reference_points: int = 0
+    affiliation_points: int = 0
+    structure_points: int = 0
+    bonus_points: int = 0
+
+    # Aliases for frontend compatibility
+    estimated_references: int = 0
+    recorded_citations: int = 0
+    has_academic_affiliation: bool = False
 
 
 class CredibilityResponse(BaseModel):
@@ -30,7 +44,7 @@ class CredibilityResponse(BaseModel):
     status: Literal["completed", "processing", "failed"] = "processing"
     external_check: Literal["matched", "not_matched", "skipped", "error"] = "skipped"
     score: int = 0
-    badge_label: str = "Venue Unverified"
+    badge_label: str = "Unindexed Draft"
     badge_variant: Literal["success", "warning", "neutral"] = "neutral"
     signals: CredibilitySignals = Field(default_factory=CredibilitySignals)
     disclaimer: str = (

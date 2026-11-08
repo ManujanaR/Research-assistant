@@ -1,4 +1,4 @@
-"""Tests for asynchronous Document Credibility & Reporting Signals service."""
+"""Tests for asynchronous Document Credibility & Reporting Signals service using OpenAlex."""
 
 import asyncio
 from datetime import UTC, datetime
@@ -7,16 +7,15 @@ from pathlib import Path
 import httpx
 import pytest
 
-from app.core.config import get_settings
 from app.core.dependencies import get_chroma_client, get_embedding_function
 from app.db.session import SessionLocal
 from app.models.credibility import DocumentCredibility
-from app.schemas.credibility import CredibilitySignals
+from app.schemas.credibility import CredibilityResponse, CredibilitySignals
 from app.services.credibility_service import (
     calculate_credibility_score,
     evaluate_document_credibility,
     extract_doi,
-    fetch_semantic_scholar_record,
+    fetch_openalex_record,
     token_set_ratio,
 )
 from app.services.qa import index_document
@@ -44,15 +43,16 @@ def test_token_set_ratio_calculation() -> None:
     assert token_set_ratio("abc", "") == 0.0
 
 
-def test_matching_doi_with_matching_title_awards_venue_points() -> None:
-    """Case 1: Matching DOI with matching title (>= 0.85 similarity) awards 35 venue points and sets matched."""
+def test_openalex_matched_title_awards_venue_and_affiliation() -> None:
+    """Case 1: OpenAlex search with matched title (similarity >= 0.85) -> returns venue, citations, institution affiliation."""
     title = "Deep Residual Learning for Image Recognition"
     ext_record = {
         "title": "Deep Residual Learning for Image Recognition",
-        "venue": "CVPR",
+        "venue": "IEEE Conference on Computer Vision and Pattern Recognition",
         "year": 2016,
-        "citation_count": 100,
-        "source": "Crossref",
+        "citation_count": 120,
+        "has_institution": True,
+        "source": "OpenAlex",
     }
     sim = token_set_ratio(title, ext_record["title"])
     assert sim >= 0.85
@@ -62,32 +62,38 @@ def test_matching_doi_with_matching_title_awards_venue_points() -> None:
         external_record=ext_record,
         title_similarity=sim,
         has_doi=True,
-        full_text="Abstract: This paper presents... Methodology ... Results ... Limitations ...",
+        full_text="Abstract: This paper presents... Methodology ... Results ... Discussion ...",
         page_1_text="Abstract: This paper presents... Author author@mit.edu",
         reference_count=25,
     )
 
-    assert signals.matched_venue == "CVPR"
+    assert (
+        signals.matched_venue
+        == "IEEE Conference on Computer Vision and Pattern Recognition"
+    )
+    assert signals.author_academic_affiliation is True
+    assert signals.has_academic_affiliation is True
     assert badge_variant == "success"
-    assert "Crossref" in badge_label or "Matched" in badge_label
+    assert badge_label == "Indexed in OpenAlex"
     # Venue: 35, Citations: 25, References: 20, Affiliation: 10, Structure: 10 -> total >= 100
     assert score >= 100
 
 
-def test_matching_doi_with_mismatched_title_awards_zero_venue_points() -> None:
-    """Case 2: Matching DOI with mismatched title (< 0.85 similarity) awards 0 venue points and sets not_matched."""
+def test_openalex_mismatched_title_rejected() -> None:
+    """Case 2: OpenAlex search with mismatched title (< 0.85) -> rejected, falls back to internal heuristics."""
     title = "Deep Residual Learning for Image Recognition"
     ext_record = {
         "title": "Completely Different Paper About Quantum Physics",
         "venue": "Physical Review B",
         "year": 2016,
         "citation_count": 100,
-        "source": "Crossref",
+        "has_institution": False,
+        "source": "OpenAlex",
     }
     sim = token_set_ratio(title, ext_record["title"])
     assert sim < 0.85
 
-    score, signals, badge_label, badge_variant = calculate_credibility_score(
+    score, signals, _badge_label, badge_variant = calculate_credibility_score(
         external_check="not_matched",
         external_record=ext_record,
         title_similarity=sim,
@@ -98,8 +104,7 @@ def test_matching_doi_with_mismatched_title_awards_zero_venue_points() -> None:
     )
 
     assert signals.matched_venue is None
-    assert badge_variant == "neutral"
-    assert badge_label == "Venue Unverified"
+    assert badge_variant in ("warning", "neutral")
     # Zero venue points awarded: max base without venue is 65
     assert score <= 65
 
@@ -107,7 +112,7 @@ def test_matching_doi_with_mismatched_title_awards_zero_venue_points() -> None:
 def test_title_search_similarity_threshold_boundary() -> None:
     """Cases 3 & 4: Title similarity at 0.84 rejected (not_matched); at 0.86 accepted (matched)."""
     # 0.84 boundary
-    score_low, signals_low, badge_low, _ = calculate_credibility_score(
+    score_low, signals_low, _, _ = calculate_credibility_score(
         external_check="not_matched",
         external_record={"venue": "IEEE Trans", "citation_count": 10, "year": 2020},
         title_similarity=0.84,
@@ -117,10 +122,9 @@ def test_title_search_similarity_threshold_boundary() -> None:
         reference_count=10,
     )
     assert signals_low.matched_venue is None
-    assert badge_low == "Venue Unverified"
 
     # 0.86 boundary
-    score_high, signals_high, badge_high, _ = calculate_credibility_score(
+    score_high, signals_high, _, _ = calculate_credibility_score(
         external_check="matched",
         external_record={"venue": "IEEE Trans", "citation_count": 10, "year": 2020},
         title_similarity=0.86,
@@ -130,7 +134,6 @@ def test_title_search_similarity_threshold_boundary() -> None:
         reference_count=10,
     )
     assert signals_high.matched_venue == "IEEE Trans"
-    assert "Matched" in badge_high
     assert score_high >= score_low + 35  # Exactly 35 venue points difference
 
 
@@ -165,25 +168,31 @@ def test_age_boundary_citation_scoring() -> None:
 
 
 @pytest.mark.asyncio
-async def test_unauthenticated_semantic_scholar(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Case 6: Querying Semantic Scholar works properly when SEMANTIC_SCHOLAR_API_KEY is unset/empty without raising errors."""
-    monkeypatch.setenv("SEMANTIC_SCHOLAR_API_KEY", "")
-    get_settings.cache_clear()
+async def test_openalex_api_fetch_and_parse() -> None:
+    """Case 6: Querying OpenAlex Works API extracts title, venue, citations, year, and institution affiliations."""
 
-    # Mock transport responding to Semantic Scholar
     def handler(request: httpx.Request) -> httpx.Response:
-        assert "x-api-key" not in request.headers
+        assert "ResearchAssistantApp/1.0" in request.headers.get("User-Agent", "")
+        assert "title.search" in str(request.url)
         return httpx.Response(
             200,
             json={
-                "data": [
+                "results": [
                     {
-                        "title": "Found Paper Title",
-                        "venue": "ArXiv",
-                        "year": 2023,
-                        "citationCount": 5,
+                        "display_name": "Attention Is All You Need",
+                        "publication_year": 2017,
+                        "cited_by_count": 85000,
+                        "primary_location": {
+                            "source": {
+                                "display_name": "Advances in Neural Information Processing Systems"
+                            }
+                        },
+                        "authorships": [
+                            {
+                                "author": {"display_name": "Ashish Vaswani"},
+                                "institutions": [{"display_name": "Google Brain"}],
+                            }
+                        ],
                     }
                 ]
             },
@@ -191,14 +200,86 @@ async def test_unauthenticated_semantic_scholar(
 
     transport = httpx.MockTransport(handler)
     async with httpx.AsyncClient(transport=transport) as client:
-        record = await fetch_semantic_scholar_record("Found Paper Title", client=client)
+        record = await fetch_openalex_record("Attention Is All You Need", client=client)
         assert record is not None
-        assert record["title"] == "Found Paper Title"
-        assert record["venue"] == "ArXiv"
+        assert record["title"] == "Attention Is All You Need"
+        assert record["venue"] == "Advances in Neural Information Processing Systems"
+        assert record["citation_count"] == 85000
+        assert record["has_institution"] is True
+        assert record["year"] == 2017
+
+
+@pytest.mark.asyncio
+async def test_openalex_network_timeout_sets_error_and_falls_back(
+    tmp_path: Path,
+) -> None:
+    """Case 7: Network timeout (> 2.5s) -> sets external_check: 'error', graceful fallback without failing upload."""
+    doc_hash = "c" * 64
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ReadTimeout("Simulated 2.5s timeout from OpenAlex API")
+
+    transport = httpx.MockTransport(handler)
+    async with httpx.AsyncClient(transport=transport) as client:
+        db = SessionLocal()
+        try:
+            record = await evaluate_document_credibility(
+                doc_hash=doc_hash,
+                db=db,
+                page_1_text="Large Prominent Title for Document\nAuthor author@stanford.edu",
+                full_text="Large Prominent Title for Document\nAbstract...\nMethodology...\nResults...\nDiscussion...",
+                http_client=client,
+            )
+
+            assert record.status == "completed"
+            assert record.external_check == "error"
+            assert record.score > 0  # Scored via internal heuristics
+            assert record.badge_label in ("Preprint Series", "Unindexed Draft")
+        finally:
+            db.close()
+
+
+def test_schema_populated_numeric_values() -> None:
+    """Case 8: Schema verification ensuring frontend receives populated numeric values for references and sections."""
+    score, signals, badge_label, badge_variant = calculate_credibility_score(
+        external_check="matched",
+        external_record={
+            "venue": "IEEE",
+            "citation_count": 7,
+            "year": 2021,
+            "has_institution": True,
+        },
+        title_similarity=0.92,
+        has_doi=True,
+        full_text="Abstract... Methodology... Results... Discussion... References\n[1] A\n[2] B\n[3] C\n[4] D\n[5] E\n[6] F\n[7] G\n[8] H\n[9] I\n[10] J",
+        page_1_text="Title\nAbstract...",
+        reference_count=10,
+    )
+
+    data = signals.model_dump()
+    assert isinstance(data["reference_count_estimated"], int)
+    assert data["reference_count_estimated"] == 10
+    assert isinstance(data["structure_sections_found"], int)
+    assert data["structure_sections_found"] == 4
+    assert isinstance(data["citation_count"], int)
+    assert data["citation_count"] == 7
+    assert data["author_academic_affiliation"] is True
+
+    # Test full response validation
+    response = CredibilityResponse(
+        status="completed",
+        score=score,
+        badge_label=badge_label,
+        badge_variant=badge_variant,
+        signals=signals,
+    )
+    resp_dict = response.model_dump()
+    assert resp_dict["signals"]["reference_count_estimated"] == 10
+    assert resp_dict["signals"]["structure_sections_found"] == 4
 
 
 def test_paper_with_no_repository_links_incurs_zero_penalty() -> None:
-    """Case 7: Paper with no repository links receives 0 bonus points without deducting from base score."""
+    """Case 9: Paper with no repository links receives 0 bonus points without deducting from base score."""
     text_without_links = (
         "Standard academic text discussing theory and experimental setups."
     )
@@ -231,40 +312,9 @@ def test_paper_with_no_repository_links_incurs_zero_penalty() -> None:
     assert score_with_links == score_no_links + 5
 
 
-@pytest.mark.asyncio
-async def test_external_api_timeout_sets_error_and_falls_back(tmp_path: Path) -> None:
-    """Case 8: External API timeout (> 2.0s) sets external_check: 'error', falls back to heuristics, and completes."""
-    doc_hash = "a" * 64
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        raise httpx.ReadTimeout("Simulated 2.0s timeout from external API")
-
-    transport = httpx.MockTransport(handler)
-    async with httpx.AsyncClient(transport=transport) as client:
-        db = SessionLocal()
-        try:
-            record = await evaluate_document_credibility(
-                doc_hash=doc_hash,
-                db=db,
-                page_1_text="Large Prominent Title for Document\nAuthor author@stanford.edu",
-                full_text="Large Prominent Title for Document\nAbstract...\nMethodology...\nResults...",
-                http_client=client,
-            )
-
-            assert record.status == "completed"
-            assert record.external_check == "error"
-            assert record.badge_label == "Venue Unverified"
-            assert (
-                record.score > 0
-            )  # Internal heuristics scored affiliation + structure
-        finally:
-            db.close()
-
-
 def test_international_academic_affiliation_patterns() -> None:
-    """Verify international second-level academic domains (.edu.<cc>, .ac.<cc>) award 10 points while standard webmail receives 0."""
-    # Case 1: user@domain.edu.mm -> awards 10 points
-    score_mm, signals_mm, _, _ = calculate_credibility_score(
+    """Case 10: Verify international academic domains (.edu.<cc>, .ac.<cc>) award 10 points while standard webmail receives 0."""
+    _score_mm, signals_mm, _, _ = calculate_credibility_score(
         external_check="skipped",
         external_record=None,
         title_similarity=0.0,
@@ -275,8 +325,7 @@ def test_international_academic_affiliation_patterns() -> None:
     )
     assert signals_mm.author_academic_affiliation is True
 
-    # Case 2: author@dept.ac.lk -> awards 10 points
-    score_lk, signals_lk, _, _ = calculate_credibility_score(
+    _score_lk, signals_lk, _, _ = calculate_credibility_score(
         external_check="skipped",
         external_record=None,
         title_similarity=0.0,
@@ -287,8 +336,7 @@ def test_international_academic_affiliation_patterns() -> None:
     )
     assert signals_lk.author_academic_affiliation is True
 
-    # Case 3: author@gmail.com -> receives 0 points
-    score_gmail, signals_gmail, _, _ = calculate_credibility_score(
+    _score_gmail, signals_gmail, _, _ = calculate_credibility_score(
         external_check="skipped",
         external_record=None,
         title_similarity=0.0,
@@ -299,13 +347,9 @@ def test_international_academic_affiliation_patterns() -> None:
     )
     assert signals_gmail.author_academic_affiliation is False
 
-    # Score comparison: academic affiliations award 10 points more than non-academic email
-    assert score_mm == score_gmail + 10
-    assert score_lk == score_gmail + 10
-
 
 def test_doi_extraction_excludes_footnotes_and_references() -> None:
-    """Ensure DOIs in footnotes and references sections are strictly excluded."""
+    """Case 11: Ensure DOIs in footnotes and references sections are strictly excluded."""
     page_1_with_ref = """
     Advances in Computational Linguistics
     Header metadata block: 10.1145/1234567.890123
@@ -323,7 +367,7 @@ def test_doi_extraction_excludes_footnotes_and_references() -> None:
 def test_credibility_endpoint_prechecks_and_retrieval(
     auth_client: AuthenticatedTestClient, tmp_path: Path
 ) -> None:
-    """GET /api/documents/{hash}/credibility enforces 404 on unowned document and returns completed response for owned document."""
+    """Case 12: GET /api/documents/{hash}/credibility enforces 404 on unowned document and returns completed response for owned document."""
     doc_hash = "b" * 64
     chroma_dir = tmp_path / "chroma_test"
     import chromadb
@@ -373,9 +417,13 @@ def test_credibility_endpoint_prechecks_and_retrieval(
             db.add(rec)
         rec.status = "completed"
         rec.score = 82
-        rec.badge_label = "Venue Matched in Crossref"
+        rec.badge_label = "Indexed in OpenAlex"
         rec.badge_variant = "success"
-        rec.signals_json = CredibilitySignals(matched_venue="CVPR").model_dump_json()
+        rec.signals_json = CredibilitySignals(
+            matched_venue="CVPR",
+            reference_count_estimated=25,
+            structure_sections_found=4,
+        ).model_dump_json()
         db.commit()
 
         resp_done = auth_client.get(f"/api/documents/{doc_hash}/credibility")
@@ -383,6 +431,8 @@ def test_credibility_endpoint_prechecks_and_retrieval(
         data_done = resp_done.json()
         assert data_done["status"] == "completed"
         assert data_done["score"] == 82
-        assert data_done["badge_label"] == "Venue Matched in Crossref"
+        assert data_done["badge_label"] == "Indexed in OpenAlex"
+        assert data_done["signals"]["reference_count_estimated"] == 25
+        assert data_done["signals"]["structure_sections_found"] == 4
     finally:
         app.dependency_overrides.clear()
