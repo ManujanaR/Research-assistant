@@ -197,6 +197,16 @@ async def fetch_openalex_record(
         if resp.status_code == 200:
             data = resp.json()
             results = data.get("results", [])
+            # If title.search returns empty, fallback to search parameter
+            if not results:
+                resp_fallback = await client.get(
+                    url,
+                    params={"search": clean_title, "per-page": "1"},
+                    headers=headers,
+                )
+                if resp_fallback.status_code == 200:
+                    results = resp_fallback.json().get("results", [])
+
             if results and isinstance(results, list):
                 item = results[0]
                 found_title = item.get("display_name") or item.get("title") or ""
@@ -348,29 +358,34 @@ def calculate_credibility_score(
     affiliation_pts = 10 if has_academic_affiliation else 0
 
     # 5. Structural Rigor (10 pts)
-    # Core sections: Abstract, Methodology, Results, Discussion / Limitations
-    has_abstract = bool(re.search(r"\babstract\b", page_1_text[:2000], re.IGNORECASE))
+    # Core sections: Abstract, Introduction, Methodology, Findings/Results, Conclusion/Discussion
+    combined_text = f"{page_1_text}\n\n{full_text}"
+    has_intro = bool(
+        re.search(r"\b(abstract|introduction)\b", combined_text, re.IGNORECASE)
+    )
     has_methodology = bool(
         re.search(
-            r"\b(methodology|methods|materials and methods)\b",
-            full_text,
+            r"\b(methodology|methods?|approach|materials and methods|materials & methods|implementation)\b",
+            combined_text,
             re.IGNORECASE,
         )
     )
     has_results = bool(
-        re.search(r"\b(results|findings|evaluation)\b", full_text, re.IGNORECASE)
-    )
-    has_discussion = bool(
         re.search(
-            r"\b(discussion|limitations?|threats to validity)\b",
-            full_text,
+            r"\b(results?|findings?|evaluation|analysis|experiments?)\b",
+            combined_text,
+            re.IGNORECASE,
+        )
+    )
+    has_conclusion = bool(
+        re.search(
+            r"\b(discussion|conclusions?|limitations?|threats to validity|future work)\b",
+            combined_text,
             re.IGNORECASE,
         )
     )
 
-    structure_sections = sum(
-        [has_abstract, has_methodology, has_results, has_discussion]
-    )
+    structure_sections = sum([has_intro, has_methodology, has_results, has_conclusion])
     structure_pts = min(10, int(structure_sections * 2.5))
 
     # Base score max 100
@@ -384,21 +399,26 @@ def calculate_credibility_score(
 
     total_score = min(105, base_score + bonus_pts)
 
-    # Status Badges:
-    # Score >= 75: "Indexed in OpenAlex" (Green)
-    # Score 55-74: "Preprint Series" (Yellow)
-    # Score < 55: "Unindexed Draft" (Neutral)
-    if total_score >= 75:
+    matched_venue = external_record.get("venue", "") if external_record else None
+
+    # Status Badges
+    if external_check == "matched":
         badge_label = "Indexed in OpenAlex"
         badge_variant = "success"
-    elif total_score >= 55:
-        badge_label = "Preprint Series"
-        badge_variant = "warning"
-    else:
+    elif external_check == "error":
         badge_label = "Unindexed Draft"
         badge_variant = "neutral"
-
-    matched_venue = external_record.get("venue", "") if external_record else None
+    else:
+        # not_matched or skipped
+        if matched_venue and any(
+            p in matched_venue.lower()
+            for p in ["arxiv", "biorxiv", "medrxiv", "preprint"]
+        ):
+            badge_label = "Preprint Series"
+            badge_variant = "warning"
+        else:
+            badge_label = "Unindexed Draft"
+            badge_variant = "neutral"
 
     signals = CredibilitySignals(
         has_doi=has_doi,
@@ -411,7 +431,7 @@ def calculate_credibility_score(
         reference_count_estimated=reference_count,
         is_reference_count_estimated=True,
         author_academic_affiliation=has_academic_affiliation,
-        has_limitations_section=has_discussion,
+        has_limitations_section=has_conclusion,
         open_artifacts_detected=open_artifacts_detected,
         structure_sections_found=structure_sections,
         venue_points=venue_pts,
@@ -459,6 +479,22 @@ async def evaluate_document_credibility(
         db.refresh(record)
 
     title = extract_title_from_page_1(page_1_text)
+    if not title or len(title) < 5:
+        from app.models.document import DocumentMetadata
+        from app.services.qa import get_title_authors_abstract
+
+        doc_meta = (
+            db.query(DocumentMetadata)
+            .filter(DocumentMetadata.doc_hash == doc_hash)
+            .first()
+        )
+        if doc_meta and doc_meta.title:
+            title = doc_meta.title
+        else:
+            sum_hdr = get_title_authors_abstract(doc_hash)
+            if sum_hdr:
+                title = sum_hdr.split("\n")[0].split(" by ")[0].strip()
+
     doi = extract_doi(page_1_text)
 
     external_check = "skipped"

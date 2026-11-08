@@ -225,7 +225,7 @@ export function CredibilityCard({ docHash }: CredibilityCardProps) {
             Citations
           </span>
           <span className="font-medium text-text-primary text-right whitespace-nowrap flex-shrink-0">
-            {(signals.citation_count ?? signals.recorded_citations ?? 0) > 0
+            {badge_label === "Indexed in OpenAlex" || (signals.citation_count ?? signals.recorded_citations ?? 0) > 0
               ? `${signals.citation_count ?? signals.recorded_citations ?? 0} recorded`
               : "Recent baseline"}
           </span>
@@ -251,7 +251,7 @@ export function CredibilityCard({ docHash }: CredibilityCardProps) {
         {/* 5. Structure */}
         <div className="flex items-center justify-between gap-2">
           <span className="flex items-center gap-1.5 text-text-secondary whitespace-nowrap">
-            {(signals.structure_sections_found ?? 0) >= 3 ? (
+            {(signals.structure_sections_found ?? (signals.structure_points ? Math.round(signals.structure_points / 2.5) : 0)) >= 3 ? (
               <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" />
             ) : (
               <AlertCircle className="w-3.5 h-3.5 text-amber-500 flex-shrink-0" />
@@ -262,7 +262,7 @@ export function CredibilityCard({ docHash }: CredibilityCardProps) {
             data-testid="section-count-text"
             className="font-medium text-text-primary text-right whitespace-nowrap flex-shrink-0"
           >
-            {(signals.structure_sections_found ?? 0)}/4 sections
+            {(signals.structure_sections_found ?? (signals.structure_points ? Math.round(signals.structure_points / 2.5) : 0))}/4 sections
           </span>
         </div>
       </div>
