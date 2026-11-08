@@ -42,9 +42,10 @@ COOKIE_NAME = "auth_token"
 )
 async def signup(
     request: SignUpRequest,
+    response: Response,
     db: Annotated[Session, Depends(get_db)],
 ) -> UserResponse:
-    """Create a new user account with hashed password and return the user profile."""
+    """Create a new user account with hashed password and return the user profile with auth cookie."""
     existing_user = get_user_by_email(db, email=request.email)
     if existing_user is not None:
         raise HTTPException(
@@ -53,6 +54,24 @@ async def signup(
         )
 
     user = create_user(db, email=request.email, password=request.password)
+
+    settings = get_settings()
+    token = create_access_token(
+        user_id=user.id,
+        token_version=user.token_version,
+    )
+    is_production = settings.environment.lower() == "production"
+
+    response.set_cookie(
+        key=COOKIE_NAME,
+        value=token,
+        httponly=True,
+        samesite="lax",
+        secure=is_production,
+        max_age=settings.auth_token_ttl_minutes * 60,
+        path="/",
+    )
+
     return UserResponse(id=user.id, email=user.email)
 
 

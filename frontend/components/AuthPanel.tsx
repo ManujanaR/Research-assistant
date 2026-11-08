@@ -78,7 +78,8 @@ export function AuthPanel({ onSuccess, initialMode = "signin" }: AuthPanelProps)
         const user = await signIn(email, password);
         onSuccess(user);
       } else {
-        const user = await signUp(email, password);
+        await signUp(email, password);
+        const user = await signIn(email, password);
         onSuccess(user);
       }
     } catch (err) {
