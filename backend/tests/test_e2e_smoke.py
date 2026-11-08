@@ -20,7 +20,11 @@ from app.main import app
 from app.services.cache import SummaryCache
 
 VALID_SUMMARY_RESPONSE = {
-    "title_authors_abstract": "Attention Is All You Need - Vaswani et al. - Transformer Architecture",
+    "header": {
+        "title": "Attention Is All You Need",
+        "authors": "Vaswani et al.",
+        "abstract": "Transformer Architecture and Self-Attention",
+    },
     "problem_statement": "Sequential computation in recurrent models limits parallelization during training.",
     "methodology": "The Transformer network architecture relies entirely on self-attention mechanisms without recurrence.",
     "key_results": "Attains 28.4 BLEU on English-to-German and 41.8 BLEU on English-to-French translation.",
@@ -222,7 +226,7 @@ async def test_full_e2e_flow_upload_summary_chat(
         summary_data = summary_resp.json()
 
         expected_keys = [
-            "title_authors_abstract",
+            "header",
             "problem_statement",
             "methodology",
             "key_results",

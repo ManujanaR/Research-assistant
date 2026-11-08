@@ -33,7 +33,11 @@ from app.services.summary_service import InMemoryPaperTextStore
 from tests.conftest import AuthenticatedTestClient
 
 SAMPLE_SUMMARY = {
-    "title_authors_abstract": "Title - Authors - Abstract",
+    "header": {
+        "title": "Title",
+        "authors": "Authors",
+        "abstract": "Abstract",
+    },
     "problem_statement": "Problem Statement",
     "methodology": "Methodology",
     "key_results": "Key Results",

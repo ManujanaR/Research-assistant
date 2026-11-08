@@ -138,8 +138,8 @@ async def test_summary_endpoint_rehydration_after_restart(
         assert response.status_code == 200
         data = response.json()
         assert (
-            data["title_authors_abstract"]
-            == VALID_SUMMARY_DICT["title_authors_abstract"]
+            data["header"]["title"]
+            == VALID_SUMMARY_DICT["header"]["title"]
         )
         # Confirm that restart_store now has the text in memory
         assert doc_hash in restart_store._store

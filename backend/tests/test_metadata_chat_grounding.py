@@ -34,7 +34,7 @@ class FakeStream:
 
 
 def test_metadata_system_prompt_formatting() -> None:
-    """System prompt correctly formats metadata block and strict grounding boundaries."""
+    """System prompt correctly formats metadata block and behavioral guidelines."""
     meta = {
         "title": "Attention Is All You Need",
         "authors": "Vaswani et al.",
@@ -47,15 +47,11 @@ def test_metadata_system_prompt_formatting() -> None:
     assert "Publisher: NeurIPS" in prompt
     assert "Venue: Conference on Neural Information Processing Systems" in prompt
     assert "Publication Year: 2017" in prompt
-    assert "Strict Grounding Boundaries" in prompt
-    assert (
-        "The <DOCUMENT_METADATA> block may be used SOLELY to answer factual queries about publisher, venue, publication year, title, or authors"
-        in prompt
-    )
-    assert (
-        "All queries regarding methodology, results, data, scientific claims, experiments, or analysis MUST be answered strictly from retrieved passages in <PAPER_EXCERPTS>"
-        in prompt
-    )
+    assert "Behavioral Guidelines:" in prompt
+    assert "Conversational Banter & Casual Energy:" in prompt
+    assert "Bibliographic & Metadata Queries:" in prompt
+    assert "Empirical & Document Research Questions:" in prompt
+    assert "Explicitly Out-of-Scope Queries:" in prompt
 
 
 def test_assemble_chat_messages_includes_metadata_and_excerpts() -> None:
@@ -83,8 +79,9 @@ def test_assemble_chat_messages_includes_metadata_and_excerpts() -> None:
     user_msg = messages[1]["content"]
 
     assert "Publisher: IEEE" in system_msg
-    assert "[Page 3]" in user_msg
-    assert "We use 8 attention heads" in user_msg
+    assert "<RETRIEVED_CHUNKS>" in system_msg
+    assert "[Page 3]" in system_msg
+    assert "We use 8 attention heads" in system_msg
     assert "Question: Who is the publisher?" in user_msg
 
 

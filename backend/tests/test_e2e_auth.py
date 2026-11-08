@@ -28,7 +28,11 @@ from app.services.cache import SummaryCache
 from app.services.rate_limiter import login_rate_limiter
 
 VALID_SUMMARY_RESPONSE = {
-    "title_authors_abstract": "Attention Is All You Need - Vaswani et al. - Transformer Architecture",
+    "header": {
+        "title": "Attention Is All You Need",
+        "authors": "Vaswani et al.",
+        "abstract": "Transformer Architecture and Self-Attention",
+    },
     "problem_statement": "Sequential computation in recurrent models limits training parallelization.",
     "methodology": "The Transformer relies entirely on self-attention mechanisms without recurrence.",
     "key_results": "Attains 28.4 BLEU on English-to-German translation task.",
@@ -274,7 +278,7 @@ def test_full_flow_across_two_users_isolation_and_signout(auth_env: None) -> Non
     summary_a_resp = client_a.post("/api/summary", json={"doc_hash": doc_hash_a})
     assert summary_a_resp.status_code == 200
     summary_a_data = summary_a_resp.json()
-    assert "title_authors_abstract" in summary_a_data
+    assert "header" in summary_a_data
     assert "problem_statement" in summary_a_data
     assert "methodology" in summary_a_data
     assert "key_results" in summary_a_data

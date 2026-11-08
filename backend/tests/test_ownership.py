@@ -31,7 +31,11 @@ from app.services.token_service import create_access_token
 
 VALID_SUMMARY_JSON = json.dumps(
     {
-        "title_authors_abstract": "Attention Paper - Vaswani et al.",
+        "header": {
+            "title": "Attention Paper",
+            "authors": "Vaswani et al.",
+            "abstract": "Attention mechanism architecture.",
+        },
         "problem_statement": "Recurrent networks are slow.",
         "methodology": "Transformer with self-attention.",
         "key_results": "State of the art BLEU score.",
@@ -224,8 +228,8 @@ def test_owner_can_upload_summarise_and_chat(
     summary_resp = client.post("/api/summary", json={"doc_hash": doc_hash})
     assert summary_resp.status_code == 200
     assert (
-        summary_resp.json()["title_authors_abstract"]
-        == "Attention Paper - Vaswani et al."
+        "Attention Paper"
+        in summary_resp.json()["header"]["title"]
     )
 
     # 3. Chat

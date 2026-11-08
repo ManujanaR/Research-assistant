@@ -12,18 +12,27 @@ from app.services.pdf_parser import (
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
 
-def test_scanned_fixture_raises_no_extractable_text_error() -> None:
-    """Verify that a scanned/image-only PDF raises NoExtractableTextError with exact message."""
+def test_scanned_fixture_raises_no_extractable_text_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Verify that a scanned/image-only PDF raises NoExtractableTextError with exact message when OCR is disabled."""
+    monkeypatch.setenv("OCR_ENABLED", "false")
+    from app.core.config import get_settings
+
+    get_settings.cache_clear()
     scanned_path = FIXTURES_DIR / "sample_scanned.pdf"
     assert scanned_path.exists(), "sample_scanned.pdf fixture must exist"
 
     scanned_bytes = scanned_path.read_bytes()
-    with pytest.raises(NoExtractableTextError) as exc_info:
-        parse_pdf(scanned_bytes)
+    try:
+        with pytest.raises(NoExtractableTextError) as exc_info:
+            parse_pdf(scanned_bytes)
 
-    assert str(exc_info.value) == (
-        "The uploaded PDF contains no extractable text. Scanned documents or image-only PDFs are not supported."
-    )
+        assert str(exc_info.value) == (
+            "The uploaded PDF contains no extractable text. Scanned documents or image-only PDFs are not supported."
+        )
+    finally:
+        get_settings.cache_clear()
 
 
 def test_corrupt_input_raises_pdf_parse_error() -> None:

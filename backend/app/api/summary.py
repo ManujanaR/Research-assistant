@@ -51,7 +51,23 @@ async def get_or_generate_summary(
     # Step 2: Cache check (hit returns immediately without touching LLM client)
     cached = cache.get(doc_hash)
     if cached is not None:
-        return SummarySchema.model_validate(cached)
+        validated = SummarySchema.model_validate(cached)
+        try:
+            from app.services.metadata_service import (
+                HeaderMetadata,
+                save_document_metadata,
+            )
+
+            save_document_metadata(
+                doc_hash=doc_hash,
+                metadata=HeaderMetadata(),
+                title=validated.header.title,
+                authors=validated.header.authors,
+                db=db,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Failed to sync cached summary metadata to db: %s", exc)
+        return validated
 
     # Step 3: Check OpenAI API key on cache miss
     settings = get_settings()
@@ -119,6 +135,21 @@ async def get_or_generate_summary(
             detail=SUMMARY_GENERATION_FAILED_MESSAGE,
         ) from exc
 
-    # Step 6: Store in cache and return
+    # Step 6: Store in cache, sync DocumentMetadata, and return
     cache.set(doc_hash, summary.model_dump())
+    try:
+        from app.services.metadata_service import (
+            HeaderMetadata,
+            save_document_metadata,
+        )
+
+        save_document_metadata(
+            doc_hash=doc_hash,
+            metadata=HeaderMetadata(),
+            title=summary.header.title,
+            authors=summary.header.authors,
+            db=db,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Failed to sync summary metadata to db (%s)", exc)
     return summary

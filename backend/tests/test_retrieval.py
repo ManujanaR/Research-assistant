@@ -247,7 +247,9 @@ def test_upload_to_summary_integration_with_shared_text_store(
         # Step 2: Request summary with real text store
         summary_resp = auth_client.post("/api/summary", json={"doc_hash": doc_hash})
         assert summary_resp.status_code == 200
-        assert summary_resp.json() == VALID_SUMMARY_DICT
+        data = summary_resp.json()
+        for k, v in VALID_SUMMARY_DICT.items():
+            assert data[k] == v
         assert len(fake_llm.chat.completions.calls) == 1
     finally:
         app.dependency_overrides.pop(get_chroma_client, None)
@@ -302,9 +304,11 @@ def test_temp_file_deleted_when_parser_raises(
 
 
 def test_upload_sample_scanned_pdf_returns_422(
-    auth_client: TestClient, tmp_path: Path
+    auth_client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Verify that uploading sample_scanned.pdf returns HTTP 422 with exact parser error message."""
+    """Verify that uploading sample_scanned.pdf returns HTTP 422 with exact parser error message when OCR is disabled."""
+    monkeypatch.setenv("OCR_ENABLED", "false")
+    get_settings.cache_clear()
     test_chroma = chromadb.PersistentClient(path=str(tmp_path / ".chroma"))
     embedder = CountingEmbedder()
 
@@ -332,6 +336,7 @@ def test_upload_sample_scanned_pdf_returns_422(
     finally:
         app.dependency_overrides.pop(get_chroma_client, None)
         app.dependency_overrides.pop(get_embedding_function, None)
+        get_settings.cache_clear()
 
 
 def test_upload_corrupt_bytes_returns_400(

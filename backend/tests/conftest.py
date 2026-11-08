@@ -52,6 +52,7 @@ def auth_client(
 ) -> Generator[AuthenticatedTestClient, None, None]:
     """Create a temporary SQLite database, sign up a test user, sign in, and return TestClient holding the auth cookie."""
     monkeypatch.setenv("AUTH_SECRET_KEY", "test-auth-secret-key-32-bytes-long")
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-mock-key")
     get_settings.cache_clear()
     login_rate_limiter.reset_all()
 

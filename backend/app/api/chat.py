@@ -21,12 +21,9 @@ from app.services.classifier import classify_and_rewrite
 from app.services.metadata_service import get_document_metadata
 from app.services.ownership_service import is_owner
 from app.services.qa import (
-    FALLBACK_GROUNDING_MESSAGE,
-    OUTSIDE_PAPER_REFUSAL,
     EmbeddingDimensionMismatchError,
     EmbedFn,
     assemble_chat_messages,
-    assemble_conversational_messages,
     assemble_overview_messages,
     collection_exists,
     extract_sources,
@@ -35,7 +32,6 @@ from app.services.qa import (
     rebuild_text_from_chroma,
     retrieve,
     stream_chat_response,
-    stream_static_message,
 )
 
 logger = logging.getLogger(__name__)
@@ -66,35 +62,65 @@ async def chat(
             detail="Document not found. Upload the PDF first.",
         )
 
-    # Step 2: Single structured classifier and query rewriter call
+    # Step 2: Resolve document metadata
+    meta = get_document_metadata(request.doc_hash, db=db)
+    metadata_dict: dict[str, Any] = {
+        "title": meta.title if meta else None,
+        "authors": meta.authors if meta else None,
+        "detected_publisher": meta.detected_publisher if meta else None,
+        "detected_venue": meta.detected_venue if meta else None,
+        "publication_year": meta.publication_year if meta else None,
+    }
+
+    if not metadata_dict["title"] or not metadata_dict["authors"]:
+        from app.core.dependencies import get_summary_cache
+
+        cache = get_summary_cache()
+        cached_summary = cache.get(request.doc_hash)
+        if cached_summary and isinstance(cached_summary, dict):
+            header_info = cached_summary.get("header")
+            if isinstance(header_info, dict):
+                if not metadata_dict["title"] and header_info.get("title"):
+                    metadata_dict["title"] = header_info.get("title")
+                if not metadata_dict["authors"] and header_info.get("authors"):
+                    metadata_dict["authors"] = header_info.get("authors")
+            elif "title_authors_abstract" in cached_summary:
+                parts = str(cached_summary["title_authors_abstract"]).split(" - ", 1)
+                if not metadata_dict["title"] and len(parts) > 0:
+                    metadata_dict["title"] = parts[0].strip()
+                if not metadata_dict["authors"] and len(parts) > 1:
+                    metadata_dict["authors"] = parts[1].split("\n")[0].strip()
+
+        if not metadata_dict["title"]:
+            summary_header = get_title_authors_abstract(request.doc_hash)
+            if summary_header:
+                metadata_dict["title"] = summary_header
+
+        if metadata_dict["title"] or metadata_dict["authors"]:
+            try:
+                from app.services.metadata_service import (
+                    HeaderMetadata,
+                    save_document_metadata,
+                )
+
+                save_document_metadata(
+                    doc_hash=request.doc_hash,
+                    metadata=HeaderMetadata(),
+                    title=metadata_dict.get("title"),
+                    authors=metadata_dict.get("authors"),
+                    db=db,
+                )
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("Silently ignored metadata sync failure: %s", exc)
+
+    # Step 3: Single structured classifier and query rewriter call
     classification = await classify_and_rewrite(
         message=request.message,
         history=request.history,
         client=llm_client,
     )
 
-    # Step 3: Intent execution
-    if classification.intent == "chat":
-        messages = assemble_conversational_messages(
-            message=request.message,
-            history=request.history,
-        )
-        return StreamingResponse(
-            stream_chat_response(
-                messages=messages,
-                sources=[],
-                client=llm_client,
-                question=request.message,
-            ),
-            media_type="text/event-stream",
-        )
-
-    if classification.intent == "outside_paper":
-        return StreamingResponse(
-            stream_static_message(OUTSIDE_PAPER_REFUSAL),
-            media_type="text/event-stream",
-        )
-
+    # Step 4: Intent routing
     if classification.intent == "document_overview":
         page_count = get_document_page_count(request.doc_hash, client=chroma_client)
         if page_count > 30:
@@ -124,7 +150,26 @@ async def chat(
             media_type="text/event-stream",
         )
 
-    # Step 4: Intent is "document_question"
+    # Conversational turns, check-ins, or out-of-scope queries:
+    # Always pass metadata and empty chunks into the unified generation call without vector retrieval
+    if classification.intent in ("chat", "outside_paper"):
+        messages = assemble_chat_messages(
+            question=request.message,
+            history=request.history,
+            chunks=[],
+            metadata=metadata_dict,
+        )
+        return StreamingResponse(
+            stream_chat_response(
+                messages=messages,
+                sources=[],
+                client=llm_client,
+                question=request.message,
+            ),
+            media_type="text/event-stream",
+        )
+
+    # Step 5: Intent is "document_question" -> retrieve relevant chunks
     search_query = classification.query.strip() or request.message
 
     try:
@@ -182,37 +227,6 @@ async def chat(
         c for c in chunks if c.distance <= settings.citation_max_distance
     ]
     sorted_relevant = sorted(relevant_chunks, key=lambda c: c.distance)[:3]
-
-    meta = get_document_metadata(request.doc_hash, db=db)
-    metadata_dict: dict[str, Any] = {
-        "title": meta.title if meta else None,
-        "authors": meta.authors if meta else None,
-        "detected_publisher": meta.detected_publisher if meta else None,
-        "detected_venue": meta.detected_venue if meta else None,
-        "publication_year": meta.publication_year if meta else None,
-    }
-
-    if not metadata_dict["title"] or not metadata_dict["authors"]:
-        summary_header = get_title_authors_abstract(request.doc_hash)
-        if summary_header and not metadata_dict["title"]:
-            metadata_dict["title"] = summary_header
-
-    has_metadata_fields = any(
-        metadata_dict.get(k) is not None
-        for k in [
-            "detected_publisher",
-            "detected_venue",
-            "publication_year",
-            "title",
-            "authors",
-        ]
-    )
-
-    if not sorted_relevant and not has_metadata_fields:
-        return StreamingResponse(
-            stream_static_message(FALLBACK_GROUNDING_MESSAGE),
-            media_type="text/event-stream",
-        )
 
     sources = extract_sources(sorted_relevant, question=request.message, max_sources=3)
     messages = assemble_chat_messages(

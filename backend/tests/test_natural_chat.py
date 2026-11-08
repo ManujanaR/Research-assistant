@@ -648,6 +648,9 @@ def test_outside_paper_intent_returns_refusal_sentence(
 
     fake_client = RecordingChatClient(
         rewrite_output={"intent": "outside_paper", "query": ""},
+        stream_tokens=[
+            "I can only answer questions about this paper. Ask me about its problem, methods, or results."
+        ],
     )
 
     app.dependency_overrides[get_chroma_client] = lambda: chroma_client

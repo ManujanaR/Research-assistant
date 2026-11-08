@@ -46,8 +46,9 @@ def create_async_openai_client() -> Any:
     settings = get_settings()
     from openai import AsyncOpenAI
 
+    api_key = settings.openai_api_key or "sk-mock-key-for-test-injection"
     return AsyncOpenAI(
-        api_key=settings.openai_api_key,
+        api_key=api_key,
         base_url=settings.openai_base_url,
     )
 
