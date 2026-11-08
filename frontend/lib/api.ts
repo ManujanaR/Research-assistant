@@ -89,7 +89,11 @@ export interface StreamChatHandlers {
 }
 
 const BASE_URL =
-  process.env.NEXT_PUBLIC_API_BASE_URL?.trim() || "http://localhost:8000";
+  typeof process.env.NEXT_PUBLIC_API_BASE_URL === "string"
+    ? process.env.NEXT_PUBLIC_API_BASE_URL.trim()
+    : typeof window !== "undefined"
+      ? ""
+      : "http://localhost:8000";
 
 interface ValidationErrorItem {
   loc?: (string | number)[];
