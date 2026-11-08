@@ -1600,5 +1600,49 @@ describe("Frontend UI Components", () => {
 
       vi.useRealTimers();
     });
+
+    it("renders reference count ('14 detected') and section count ('3/4 sections') completely without clipping", async () => {
+      const formattingData: CredibilityResponse = {
+        status: "completed",
+        external_check: "matched",
+        score: 75,
+        badge_label: "Venue Matched in Crossref",
+        badge_variant: "success",
+        signals: {
+          venue_points: 35,
+          citation_points: 15,
+          reference_points: 10,
+          affiliation_points: 10,
+          structure_points: 7,
+          bonus_points: 0,
+          matched_venue: "IEEE Trans. Big Data",
+          estimated_references: 14,
+          recorded_citations: 12,
+          publication_year: 2022,
+          has_doi: true,
+          doi: "10.1109/TBD.2022.12345",
+          has_academic_affiliation: true,
+          structure_sections_found: 3,
+          open_artifacts_detected: false,
+        },
+        disclaimer: "Reporting signals score.",
+      };
+
+      vi.mocked(getDocumentCredibility).mockResolvedValueOnce(formattingData);
+
+      render(<CredibilityCard docHash="test-format-doc" />);
+
+      await waitFor(() => {
+        expect(screen.getByTestId("credibility-card")).toBeDefined();
+      });
+
+      const refCountEl = screen.getByTestId("ref-count-text");
+      expect(refCountEl.textContent).toBe("14 detected");
+      expect(refCountEl.className).toContain("whitespace-nowrap");
+
+      const sectionCountEl = screen.getByTestId("section-count-text");
+      expect(sectionCountEl.textContent).toBe("3/4 sections");
+      expect(sectionCountEl.className).toContain("whitespace-nowrap");
+    });
   });
 });

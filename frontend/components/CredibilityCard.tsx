@@ -186,8 +186,8 @@ export function CredibilityCard({ docHash }: CredibilityCardProps) {
         </div>
 
         {/* 2. References */}
-        <div className="flex items-start justify-between gap-2">
-          <span className="flex items-center gap-1.5 text-text-secondary">
+        <div className="flex items-center justify-between gap-2">
+          <span className="flex items-center gap-1.5 text-text-secondary whitespace-nowrap">
             {signals.reference_points >= 10 ? (
               <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" />
             ) : (
@@ -195,15 +195,18 @@ export function CredibilityCard({ docHash }: CredibilityCardProps) {
             )}
             References
           </span>
-          <div className="flex items-center gap-1 text-right">
-            <span className="font-medium text-text-primary">
+          <div className="flex items-center gap-1 text-right flex-shrink-0">
+            <span
+              data-testid="ref-count-text"
+              className="font-medium text-text-primary whitespace-nowrap"
+            >
               {signals.estimated_references} detected
             </span>
             {signals.estimated_references < 20 && (
               <span
                 data-testid="ref-estimate-tooltip"
                 title="Estimated from layout"
-                className="cursor-help inline-flex items-center text-text-muted hover:text-text-primary"
+                className="cursor-help inline-flex items-center text-text-muted hover:text-text-primary flex-shrink-0"
               >
                 <HelpCircle className="w-3 h-3 text-amber-500" />
               </span>
@@ -212,8 +215,8 @@ export function CredibilityCard({ docHash }: CredibilityCardProps) {
         </div>
 
         {/* 3. Citations */}
-        <div className="flex items-start justify-between gap-2">
-          <span className="flex items-center gap-1.5 text-text-secondary">
+        <div className="flex items-center justify-between gap-2">
+          <span className="flex items-center gap-1.5 text-text-secondary whitespace-nowrap">
             {signals.citation_points >= 15 ? (
               <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" />
             ) : (
@@ -221,7 +224,7 @@ export function CredibilityCard({ docHash }: CredibilityCardProps) {
             )}
             Citations
           </span>
-          <span className="font-medium text-text-primary text-right">
+          <span className="font-medium text-text-primary text-right whitespace-nowrap flex-shrink-0">
             {signals.recorded_citations > 0
               ? `${signals.recorded_citations} recorded`
               : "Recent baseline"}
@@ -229,8 +232,8 @@ export function CredibilityCard({ docHash }: CredibilityCardProps) {
         </div>
 
         {/* 4. Affiliation */}
-        <div className="flex items-start justify-between gap-2">
-          <span className="flex items-center gap-1.5 text-text-secondary">
+        <div className="flex items-center justify-between gap-2">
+          <span className="flex items-center gap-1.5 text-text-secondary whitespace-nowrap">
             {signals.has_academic_affiliation ? (
               <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" />
             ) : (
@@ -246,8 +249,8 @@ export function CredibilityCard({ docHash }: CredibilityCardProps) {
         </div>
 
         {/* 5. Structure */}
-        <div className="flex items-start justify-between gap-2">
-          <span className="flex items-center gap-1.5 text-text-secondary">
+        <div className="flex items-center justify-between gap-2">
+          <span className="flex items-center gap-1.5 text-text-secondary whitespace-nowrap">
             {signals.structure_sections_found >= 3 ? (
               <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" />
             ) : (
@@ -255,7 +258,10 @@ export function CredibilityCard({ docHash }: CredibilityCardProps) {
             )}
             Structure
           </span>
-          <span className="font-medium text-text-primary text-right">
+          <span
+            data-testid="section-count-text"
+            className="font-medium text-text-primary text-right whitespace-nowrap flex-shrink-0"
+          >
             {signals.structure_sections_found}/4 sections
           </span>
         </div>
