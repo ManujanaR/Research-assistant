@@ -14,8 +14,10 @@ from app.schemas.credibility import CredibilityResponse, CredibilitySignals
 from app.services.credibility_service import (
     calculate_credibility_score,
     evaluate_document_credibility,
+    extract_academic_affiliation_from_front_matter,
     extract_doi,
     fetch_openalex_record,
+    sanitize_openalex_title,
     token_set_ratio,
 )
 from app.services.qa import index_document
@@ -41,6 +43,56 @@ def test_token_set_ratio_calculation() -> None:
 
     assert token_set_ratio("", "") == 1.0
     assert token_set_ratio("abc", "") == 0.0
+
+
+def test_sanitize_openalex_title() -> None:
+    """Verify stripping of all punctuation (colons, dashes, apostrophes, etc.) and whitespace collapsing."""
+    raw = "The Impact of COVID-19 on Student Experiences and Expectations: Evidence from a Survey"
+    expected = "The Impact of COVID 19 on Student Experiences and Expectations Evidence from a Survey"
+    assert sanitize_openalex_title(raw) == expected
+    assert (
+        sanitize_openalex_title("What's Next? A / B Testing: Results-Driven")
+        == "What s Next A B Testing Results Driven"
+    )
+
+
+def test_page_2_academic_email_affiliation_extraction() -> None:
+    """Verify inspecting Page 1 AND Page 2 detects academic emails (e.g. @asu.edu) and awards 10 affiliation points."""
+    page_1_cover = """
+    NATIONAL BUREAU OF ECONOMIC RESEARCH
+    1050 Massachusetts Avenue
+    Cambridge, MA 02138
+    Working Paper Series
+    """
+    page_2_author_info = """
+    The Impact of COVID-19 on Student Experiences and Expectations: Evidence from a Survey
+    Esteban M. Aucejo
+    Department of Economics, Arizona State University
+    Email: esteban.aucejo@asu.edu
+    Jacob French
+    Basit Zafar
+    """
+    full_text = f"{page_1_cover}\n\n{page_2_author_info}\n\nAbstract\nWe survey 1500 students..."
+
+    assert (
+        extract_academic_affiliation_from_front_matter(
+            page_1_cover, full_text=full_text
+        )
+        is True
+    )
+
+    _score, signals, _, _ = calculate_credibility_score(
+        external_check="skipped",
+        external_record=None,
+        title_similarity=0.0,
+        has_doi=False,
+        full_text=full_text,
+        page_1_text=page_1_cover,
+        reference_count=15,
+    )
+    assert signals.author_academic_affiliation is True
+    assert signals.has_academic_affiliation is True
+    assert signals.affiliation_points == 10
 
 
 def test_openalex_matched_title_awards_venue_and_affiliation() -> None:

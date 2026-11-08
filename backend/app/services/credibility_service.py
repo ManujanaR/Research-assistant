@@ -3,6 +3,7 @@
 import json
 import logging
 import re
+import urllib.parse
 from datetime import UTC, datetime
 from typing import Any
 
@@ -54,6 +55,36 @@ def normalize_string(text: str) -> str:
         return ""
     no_punct = re.sub(r"[^\w\s]", " ", text.lower())
     return " ".join(no_punct.split())
+
+
+def sanitize_openalex_title(title: str) -> str:
+    """Sanitize title for OpenAlex title.search filter query.
+
+    Strips all punctuation and special characters (colons ':', slashes '/',
+    apostrophes ''', dashes '-', question marks '?', etc.), replaces multiple
+    whitespace characters with a single space, and strips leading/trailing whitespace.
+
+    Example:
+        'The Impact of COVID-19 on Student Experiences and Expectations: Evidence from a Survey'
+        -> 'The Impact of COVID 19 on Student Experiences and Expectations Evidence from a Survey'
+    """
+    if not title:
+        return ""
+    # Strip colons, slashes, apostrophes, dashes, question marks and any other punctuation
+    no_punct = re.sub(r"[^\w\s]", " ", title)
+    return " ".join(no_punct.split())
+
+
+def extract_academic_affiliation_from_front_matter(
+    page_1_text: str, full_text: str = ""
+) -> bool:
+    """Inspect both Page 1 and Page 2 for author contact emails.
+
+    Working papers (such as NBER) frequently place author emails and affiliations
+    on Page 2. Scanning both Page 1 and Page 2 detects academic domains (e.g. @asu.edu).
+    """
+    scan_target = f"{page_1_text}\n\n{full_text[:8000]}"
+    return bool(ACADEMIC_DOMAIN_REGEX.search(scan_target))
 
 
 def token_set_ratio(str1: str, str2: str) -> float:
@@ -164,24 +195,23 @@ async def fetch_openalex_record(
     """Query OpenAlex Works API for a given paper title with a strict 2.5s timeout.
 
     Privacy & Grounding Constraints:
-    - Queries STRICTLY the clean title string. Document body, chunks, user identity,
+    - Queries STRICTLY the sanitized title string. Document body, chunks, user identity,
       and chat turns are never sent.
     """
-    clean_title = normalize_string(title)
+    clean_title = sanitize_openalex_title(title)
     if not clean_title:
         return None
 
     cache = get_credibility_cache()
-    cache_key = f"cred:openalex:{clean_title}"
+    cache_key = f"cred:openalex:{clean_title.lower()}"
     cached = cache.get(cache_key)
     if cached is not None:
         return cached
 
-    url = "https://api.openalex.org/works"
-    params = {
-        "filter": f"title.search:{clean_title}",
-        "per-page": "1",
-    }
+    encoded_title = urllib.parse.quote(clean_title)
+    url = (
+        f"https://api.openalex.org/works?filter=title.search:{encoded_title}&per-page=1"
+    )
     headers = {
         "User-Agent": "ResearchAssistantApp/1.0 (mailto:support@local.app)",
         "Accept": "application/json",
@@ -193,17 +223,16 @@ async def fetch_openalex_record(
         close_client = True
 
     try:
-        resp = await client.get(url, params=params, headers=headers)
+        resp = await client.get(url, headers=headers)
         if resp.status_code == 200:
             data = resp.json()
             results = data.get("results", [])
             # If title.search returns empty, fallback to search parameter
             if not results:
-                resp_fallback = await client.get(
-                    url,
-                    params={"search": clean_title, "per-page": "1"},
-                    headers=headers,
+                fallback_url = (
+                    f"https://api.openalex.org/works?search={encoded_title}&per-page=1"
                 )
+                resp_fallback = await client.get(fallback_url, headers=headers)
                 if resp_fallback.status_code == 200:
                     results = resp_fallback.json().get("results", [])
 
@@ -349,11 +378,13 @@ def calculate_credibility_score(
         ref_pts = 5
 
     # 4. Academic Affiliation (10 pts)
-    # Confirmed via OpenAlex institutions or academic email regex (.edu, .ac.*, .gov)
+    # Confirmed via OpenAlex institutions or academic email regex (.edu, .ac.*, .gov) on Page 1 or Page 2
     has_openalex_inst = (
         bool(external_record.get("has_institution")) if external_record else False
     )
-    has_regex_affiliation = bool(ACADEMIC_DOMAIN_REGEX.search(page_1_text))
+    has_regex_affiliation = extract_academic_affiliation_from_front_matter(
+        page_1_text=page_1_text, full_text=full_text
+    )
     has_academic_affiliation = has_openalex_inst or has_regex_affiliation
     affiliation_pts = 10 if has_academic_affiliation else 0
 

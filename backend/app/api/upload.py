@@ -146,8 +146,9 @@ async def upload_document(
         record_owner(doc_hash, current_user.id, db=db)
 
         # Trigger non-blocking credibility evaluation in background task
-        page_1_text = "\n\n".join(
-            c["text"] for c in parsed_doc.chunks if c.get("page") == 1
+        # Scan Page 1 and Page 2 for front matter (e.g. titles, author contact emails, affiliations)
+        page_1_and_2_text = "\n\n".join(
+            c["text"] for c in parsed_doc.chunks if c.get("page") in (1, 2)
         )
         cred_record = (
             db.query(DocumentCredibility)
@@ -162,7 +163,7 @@ async def upload_document(
         background_tasks.add_task(
             run_credibility_in_background,
             doc_hash=doc_hash,
-            page_1_text=page_1_text,
+            page_1_text=page_1_and_2_text,
             full_text=full_text,
         )
 
