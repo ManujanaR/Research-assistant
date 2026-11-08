@@ -261,6 +261,49 @@ async def test_external_api_timeout_sets_error_and_falls_back(tmp_path: Path) ->
             db.close()
 
 
+def test_international_academic_affiliation_patterns() -> None:
+    """Verify international second-level academic domains (.edu.<cc>, .ac.<cc>) award 10 points while standard webmail receives 0."""
+    # Case 1: user@domain.edu.mm -> awards 10 points
+    score_mm, signals_mm, _, _ = calculate_credibility_score(
+        external_check="skipped",
+        external_record=None,
+        title_similarity=0.0,
+        has_doi=False,
+        full_text="Methodology ... Results ...",
+        page_1_text="Research Paper\nContact: user@domain.edu.mm",
+        reference_count=10,
+    )
+    assert signals_mm.author_academic_affiliation is True
+
+    # Case 2: author@dept.ac.lk -> awards 10 points
+    score_lk, signals_lk, _, _ = calculate_credibility_score(
+        external_check="skipped",
+        external_record=None,
+        title_similarity=0.0,
+        has_doi=False,
+        full_text="Methodology ... Results ...",
+        page_1_text="Research Paper\nContact: author@dept.ac.lk",
+        reference_count=10,
+    )
+    assert signals_lk.author_academic_affiliation is True
+
+    # Case 3: author@gmail.com -> receives 0 points
+    score_gmail, signals_gmail, _, _ = calculate_credibility_score(
+        external_check="skipped",
+        external_record=None,
+        title_similarity=0.0,
+        has_doi=False,
+        full_text="Methodology ... Results ...",
+        page_1_text="Research Paper\nContact: author@gmail.com",
+        reference_count=10,
+    )
+    assert signals_gmail.author_academic_affiliation is False
+
+    # Score comparison: academic affiliations award 10 points more than non-academic email
+    assert score_mm == score_gmail + 10
+    assert score_lk == score_gmail + 10
+
+
 def test_doi_extraction_excludes_footnotes_and_references() -> None:
     """Ensure DOIs in footnotes and references sections are strictly excluded."""
     page_1_with_ref = """

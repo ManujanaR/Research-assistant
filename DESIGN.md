@@ -173,6 +173,7 @@ Default theme: light.
   * **Timeout (> 30s) / Error state:** *"Analysis unavailable"*.
 * **Reporting Disclaimer:** Subtext clearly visible on the card: *"Reporting signals score. Does not verify experimental correctness or research quality."*
 * **Estimated References Tooltip:** If estimated references count is under 20, render an *"Estimated from layout"* tooltip.
+* **Author Affiliation Shape:** 10 points awarded when author contact lines match academic domain pattern shapes (`.edu`, `.edu.<country_code>`, `.ac`, `.ac.<country_code>`, `.gov`, `.gov.<country_code>`). Verifies domain pattern shape, not institutional authentication.
 
 ## 4.7 Export
 

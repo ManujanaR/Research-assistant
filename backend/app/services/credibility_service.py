@@ -22,8 +22,14 @@ EXTERNAL_API_TIMEOUT_SECONDS = 2.0
 # Regex patterns
 DOI_REGEX = re.compile(r"\b10\.\d{4,9}/[-._;()/:A-Za-z0-9]+\b")
 ARXIV_REGEX = re.compile(r"\barXiv:\d{4}\.\d{4,5}\b", re.IGNORECASE)
+# International second-level academic and research domains:
+# Recognizes .edu, .edu.<country_code> (e.g. yeeyeemon@ucsm.edu.mm),
+# .ac, .ac.<country_code> (e.g. author@dept.ac.lk, .ac.uk),
+# and .gov, .gov.<country_code>.
+# Note: This verifies domain pattern shape, not institutional authentication.
 ACADEMIC_DOMAIN_REGEX = re.compile(
-    r"(?:@[\w\-.]+\.|\b)(?:[a-zA-Z0-9\-]+\.)*(?:edu|ac\.[a-z]{2,3}|gov)\b",
+    r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.(?:edu(?:\.[a-z]{2,3})?|ac(?:\.[a-z]{2,3})?|gov(?:\.[a-z]{2,3})?)\b|"
+    r"\b(?:[a-zA-Z0-9-]+\.)+(?:edu(?:\.[a-z]{2,3})?|ac(?:\.[a-z]{2,3})?|gov(?:\.[a-z]{2,3})?)\b",
     re.IGNORECASE,
 )
 OPEN_ARTIFACTS_REGEX = re.compile(
