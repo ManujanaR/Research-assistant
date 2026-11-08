@@ -59,6 +59,10 @@ class Settings(BaseSettings):
     summary_cache_dir: str = Field(
         default=".cache/summaries", alias="SUMMARY_CACHE_DIR"
     )
+    credibility_cache_dir: str = Field(
+        default=".cache/credibility", alias="CREDIBILITY_CACHE_DIR"
+    )
+    semantic_scholar_api_key: str = Field(default="", alias="SEMANTIC_SCHOLAR_API_KEY")
     chroma_dir: str = Field(default=".chroma", alias="CHROMA_DIR")
     ocr_enabled: bool = Field(default=True, alias="OCR_ENABLED")
     ocr_timeout_seconds: int = Field(default=120, gt=0, alias="OCR_TIMEOUT_SECONDS")
@@ -73,6 +77,7 @@ class Settings(BaseSettings):
     def model_post_init(self, context: Any, /) -> None:
         """Resolve directory paths relative to the backend folder and validate settings."""
         self.summary_cache_dir = _resolve_backend_path(self.summary_cache_dir)
+        self.credibility_cache_dir = _resolve_backend_path(self.credibility_cache_dir)
         self.chroma_dir = _resolve_backend_path(self.chroma_dir)
         self.database_url = _resolve_database_url(self.database_url)
         logger.info("Resolved SUMMARY_CACHE_DIR: %s", self.summary_cache_dir)

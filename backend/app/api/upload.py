@@ -5,7 +5,7 @@ from typing import Annotated
 
 import openai
 from chromadb.api import ClientAPI
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, UploadFile
 from sqlalchemy.orm import Session
 
 from app.core.dependencies import (
@@ -14,9 +14,11 @@ from app.core.dependencies import (
     get_embedding_function,
     get_paper_text_store,
 )
-from app.db.session import get_db
+from app.db.session import SessionLocal, get_db
+from app.models.credibility import DocumentCredibility
 from app.models.user import User
 from app.schemas.upload import UploadResponse
+from app.services.credibility_service import evaluate_document_credibility
 from app.services.ownership_service import record_owner
 from app.services.pdf_parser import (
     NoExtractableTextError,
@@ -32,6 +34,24 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["upload"])
 
 
+async def run_credibility_in_background(
+    doc_hash: str, page_1_text: str, full_text: str
+) -> None:
+    """Run non-blocking credibility evaluation in background task."""
+    db = SessionLocal()
+    try:
+        await evaluate_document_credibility(
+            doc_hash=doc_hash,
+            db=db,
+            page_1_text=page_1_text,
+            full_text=full_text,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Background credibility task failed for %s: %s", doc_hash, exc)
+    finally:
+        db.close()
+
+
 @router.post("/upload", response_model=UploadResponse)
 async def upload_document(
     file: Annotated[UploadFile, File()],
@@ -40,6 +60,7 @@ async def upload_document(
     text_store: Annotated[PaperTextStore, Depends(get_paper_text_store)],
     chroma_client: Annotated[ClientAPI, Depends(get_chroma_client)],
     embed_fn: Annotated[EmbedFn, Depends(get_embedding_function)],
+    background_tasks: BackgroundTasks,
 ) -> UploadResponse:
     """Accept, validate, parse, index into ChromaDB, and populate paper text store."""
     doc_hash, filename, size_bytes, file_bytes = await validate_and_hash_upload(file)
@@ -106,6 +127,27 @@ async def upload_document(
 
         # Record document ownership (first uploader remains recorded owner)
         record_owner(doc_hash, current_user.id, db=db)
+
+        # Trigger non-blocking credibility evaluation in background task
+        page_1_text = "\n\n".join(
+            c["text"] for c in parsed_doc.chunks if c.get("page") == 1
+        )
+        cred_record = (
+            db.query(DocumentCredibility)
+            .filter(DocumentCredibility.doc_hash == doc_hash)
+            .first()
+        )
+        if not cred_record:
+            cred_record = DocumentCredibility(doc_hash=doc_hash, status="processing")
+            db.add(cred_record)
+            db.commit()
+
+        background_tasks.add_task(
+            run_credibility_in_background,
+            doc_hash=doc_hash,
+            page_1_text=page_1_text,
+            full_text=full_text,
+        )
 
         return UploadResponse(
             doc_hash=doc_hash,
