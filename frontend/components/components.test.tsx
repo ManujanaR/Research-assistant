@@ -19,6 +19,7 @@ import { PrintReport } from "./PrintReport";
 import { ThemeToggle } from "./ThemeToggle";
 import { AuthPanel } from "./AuthPanel";
 import { SignOutButton } from "./SignOutButton";
+import { ConvertLink } from "./ConvertLink";
 import Home from "@/app/page";
 import {
   ApiError,
@@ -384,6 +385,61 @@ describe("Frontend UI Components", () => {
       render(<StudioPanel summary={null} isLoading={false} error={null} />);
       expect(screen.getByText("Summary")).toBeDefined();
       expect(screen.getByText("No summary available")).toBeDefined();
+    });
+
+    it("renders ConvertLink with text 'Convert other files' when no paper is loaded", () => {
+      render(<SourcePanel filename={null} onReset={vi.fn()} />);
+      const link = screen.getByRole("link", { name: /convert other files/i });
+      expect(link).toBeDefined();
+      expect(link.getAttribute("href")).toBe("https://www.ilovepdf.com");
+      expect(link.getAttribute("target")).toBe("_blank");
+      expect(link.getAttribute("rel")).toBe("noopener noreferrer");
+      expect(
+        screen.getByText(
+          "Opens iLovePDF in a new tab. Your file is sent to iLovePDF, not to Mitra."
+        )
+      ).toBeDefined();
+    });
+
+    it("does not render ConvertLink when a paper is loaded", () => {
+      render(
+        <SourcePanel
+          filename="test.pdf"
+          pageCount={5}
+          chunkCount={10}
+          onReset={vi.fn()}
+        />
+      );
+      expect(
+        screen.queryByRole("link", { name: /convert other files/i })
+      ).toBeNull();
+      expect(
+        screen.queryByText(
+          "Opens iLovePDF in a new tab. Your file is sent to iLovePDF, not to Mitra."
+        )
+      ).toBeNull();
+    });
+  });
+
+  describe("ConvertLink", () => {
+    it("renders the button with text 'Convert other files' and caption with exact wording", () => {
+      render(<ConvertLink />);
+      const btn = screen.getByRole("link", { name: /convert other files/i });
+      expect(btn).toBeDefined();
+      expect(screen.getByText("Convert other files")).toBeDefined();
+      expect(
+        screen.getByText(
+          "Opens iLovePDF in a new tab. Your file is sent to iLovePDF, not to Mitra."
+        )
+      ).toBeDefined();
+    });
+
+    it("has href https://www.ilovepdf.com, and target='_blank' and rel='noopener noreferrer'", () => {
+      render(<ConvertLink />);
+      const link = screen.getByRole("link", { name: /convert other files/i });
+      expect(link.getAttribute("href")).toBe("https://www.ilovepdf.com");
+      expect(link.getAttribute("target")).toBe("_blank");
+      expect(link.getAttribute("rel")).toBe("noopener noreferrer");
     });
   });
 

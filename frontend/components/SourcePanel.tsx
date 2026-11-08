@@ -10,6 +10,7 @@ import {
   Plus,
 } from "lucide-react";
 import { UploadZone } from "./UploadZone";
+import { ConvertLink } from "./ConvertLink";
 import { UploadResponse } from "@/lib/api";
 
 export interface SourcePanelProps {
@@ -140,6 +141,8 @@ export function SourcePanel({
           <div className="flex-1 min-h-0">
             <UploadZone onUploaded={onUploaded || (() => {})} />
           </div>
+
+          <ConvertLink />
 
           <div className="text-center pt-1">
             <p className="text-xs text-text-muted">
