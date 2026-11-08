@@ -13,7 +13,11 @@ from app.services.summarizer import (
 )
 
 VALID_SUMMARY_DICT = {
-    "title_authors_abstract": "Attention Is All You Need - Vaswani et al. - Abstract",
+    "header": {
+        "title": "Attention Is All You Need",
+        "authors": "Vaswani et al.",
+        "abstract": "The Transformer network architecture relies entirely on self-attention.",
+    },
     "problem_statement": "Recurrent neural networks are sequential and slow to train.",
     "methodology": "The Transformer architecture relies entirely on self-attention.",
     "key_results": "BLEU score of 28.4 on WMT 2014 English-to-German translation.",
@@ -80,9 +84,9 @@ async def test_valid_json_parses_in_single_call() -> None:
     summary = await generate_summary("Paper text content", client)
 
     assert isinstance(summary, SummarySchema)
-    assert (
-        summary.title_authors_abstract == VALID_SUMMARY_DICT["title_authors_abstract"]
-    )
+    assert summary.header.title == VALID_SUMMARY_DICT["header"]["title"]
+    assert summary.header.authors == VALID_SUMMARY_DICT["header"]["authors"]
+    assert summary.header.abstract == VALID_SUMMARY_DICT["header"]["abstract"]
     assert summary.conclusion == VALID_SUMMARY_DICT["conclusion"]
     assert len(client.chat.completions.calls) == 1
     assert client.chat.completions.calls[0]["model"] == get_settings().model_name
@@ -146,9 +150,7 @@ async def test_non_json_content_retries_and_succeeds() -> None:
     )
     summary = await generate_summary("Paper text content", client)
 
-    assert (
-        summary.title_authors_abstract == VALID_SUMMARY_DICT["title_authors_abstract"]
-    )
+    assert summary.header.title == VALID_SUMMARY_DICT["header"]["title"]
     assert len(client.chat.completions.calls) == 2
 
 
@@ -161,9 +163,7 @@ async def test_extra_unexpected_key_fails_validation_and_triggers_retry() -> Non
     client = FakeOpenAIClient([json.dumps(extra_dict), json.dumps(VALID_SUMMARY_DICT)])
     summary = await generate_summary("Paper text content", client)
 
-    assert (
-        summary.title_authors_abstract == VALID_SUMMARY_DICT["title_authors_abstract"]
-    )
+    assert summary.header.title == VALID_SUMMARY_DICT["header"]["title"]
     assert len(client.chat.completions.calls) == 2
 
     second_call_messages = client.chat.completions.calls[1]["messages"]
@@ -195,3 +195,22 @@ async def test_model_name_passed_from_settings() -> None:
 
     call = client.chat.completions.calls[0]
     assert call["model"] == get_settings().model_name
+
+
+@pytest.mark.asyncio
+async def test_missing_header_authors_fails_validation_and_retries_once() -> None:
+    """Verify that a response missing header.authors fails validation and retries once."""
+    missing_authors_dict = json.loads(json.dumps(VALID_SUMMARY_DICT))
+    del missing_authors_dict["header"]["authors"]
+
+    client = FakeOpenAIClient(
+        [json.dumps(missing_authors_dict), json.dumps(VALID_SUMMARY_DICT)]
+    )
+    summary = await generate_summary("Paper text content", client)
+
+    assert summary.header.authors == VALID_SUMMARY_DICT["header"]["authors"]
+    assert len(client.chat.completions.calls) == 2
+
+    second_call_messages = client.chat.completions.calls[1]["messages"]
+    feedback_msg = second_call_messages[-1]["content"]
+    assert "authors" in feedback_msg.lower() or "missing" in feedback_msg.lower()
