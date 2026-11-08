@@ -1,6 +1,7 @@
 """Tests for natural-language query rewriting and chat answering."""
 
 import asyncio
+import json
 from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
@@ -57,7 +58,7 @@ class RecordingChatClient:
 
     def __init__(
         self,
-        rewrite_output: str = "rewritten search query",
+        rewrite_output: Any = "rewritten search query",
         stream_tokens: list[str] | None = None,
         rewrite_should_fail: bool = False,
     ) -> None:
@@ -81,6 +82,20 @@ class RecordingChatClient:
         if self.rewrite_should_fail:
             raise RuntimeError("Simulated query rewrite API failure")
 
+        output = self.rewrite_output
+        if callable(output):
+            content = output(kwargs)
+        elif isinstance(output, dict):
+            content = json.dumps(output)
+        elif kwargs.get("response_format"):
+            stripped = str(output).strip()
+            if stripped.startswith("{") and stripped.endswith("}"):
+                content = output
+            else:
+                content = json.dumps({"intent": "document_question", "query": output})
+        else:
+            content = str(output)
+
         return type(
             "Completion",
             (),
@@ -89,11 +104,7 @@ class RecordingChatClient:
                     type(
                         "Choice",
                         (),
-                        {
-                            "message": type(
-                                "Msg", (), {"content": self.rewrite_output}
-                            )()
-                        },
+                        {"message": type("Msg", (), {"content": content})()},
                     )()
                 ]
             },
@@ -450,10 +461,10 @@ def test_fallback_returned_when_passages_do_not_answer(
         app.dependency_overrides.clear()
 
 
-def test_greetings_and_small_talk_make_zero_rewrite_and_retrieval_calls(
+def test_chat_intent_triggers_zero_retrieval_and_cites_no_paper_facts(
     auth_client: AuthenticatedTestClient, tmp_path: Path
 ) -> None:
-    """Greetings and small talk make zero rewrite calls and zero retrieval calls."""
+    """An intent of 'chat' triggers zero vector retrieval calls and cites no paper facts."""
     doc_hash = "f" * 64
     chroma_dir = tmp_path / "chroma_test"
     chroma_client = chromadb.PersistentClient(path=str(chroma_dir))
@@ -470,7 +481,8 @@ def test_greetings_and_small_talk_make_zero_rewrite_and_retrieval_calls(
     auth_client.record_ownership(doc_hash)
 
     fake_client = RecordingChatClient(
-        stream_tokens=["Hello! How can I help you with this research paper?"]
+        rewrite_output={"intent": "chat", "query": ""},
+        stream_tokens=["Hello! How can I help you with this research paper?"],
     )
 
     app.dependency_overrides[get_chroma_client] = lambda: chroma_client
@@ -478,7 +490,6 @@ def test_greetings_and_small_talk_make_zero_rewrite_and_retrieval_calls(
     app.dependency_overrides[get_chat_llm_client] = lambda: fake_client
 
     try:
-        # Reset embedder after indexing setup so we only record chat retrieval calls
         embedder.call_count = 0
         embedder.queries_received.clear()
 
@@ -488,21 +499,177 @@ def test_greetings_and_small_talk_make_zero_rewrite_and_retrieval_calls(
             json={"doc_hash": doc_hash, "message": "hello"},
         )
         assert response.status_code == 200
-        assert len(fake_client.rewrite_calls) == 0, (
-            "Expected zero rewrite calls for greeting"
-        )
-        assert embedder.call_count == 0, "Expected zero retrieval calls for greeting"
+        events = parse_sse_events(response.text)
+        sources_events = [e for e in events if e["event"] == "sources"]
+        assert len(sources_events) == 1
+        assert sources_events[0]["data"] == []  # Cites zero paper facts/sources
+        assert embedder.call_count == 0  # Expected zero retrieval calls for chat
+    finally:
+        app.dependency_overrides.clear()
 
-        # Test small talk / thank you
-        response2 = auth_client.post(
+
+def test_document_overview_over_30_pages_consumes_only_title_authors_abstract(
+    auth_client: AuthenticatedTestClient, tmp_path: Path
+) -> None:
+    """An intent of 'document_overview' on paper > 30 pages triggers 0 vector retrieval and consumes title_authors_abstract."""
+    doc_hash = "e" * 64
+    chroma_dir = tmp_path / "chroma_test"
+    chroma_client = chromadb.PersistentClient(path=str(chroma_dir))
+    embedder = RecordingEmbedder()
+
+    # Index document with 35 pages
+    chunks = [{"text": f"Page content for page {i}", "page": i} for i in range(1, 36)]
+    asyncio.run(
+        index_document(
+            doc_hash=doc_hash,
+            chunks=chunks,
+            embed_fn=embedder,
+            client=chroma_client,
+        )
+    )
+    auth_client.record_ownership(doc_hash)
+
+    from app.core.dependencies import get_summary_cache
+
+    cache = get_summary_cache()
+    cache.set(
+        doc_hash,
+        {
+            "header": {
+                "title": "Quantum Error Correction Advances",
+                "authors": "Alice & Bob",
+                "abstract": "We present surface code fault-tolerant threshold findings.",
+            },
+            "problem_statement": "Decoherence in qubits.",
+            "methodology": "Surface code simulations.",
+            "key_results": "Threshold of 1% achieved.",
+            "conclusion": "Fault-tolerant scaling verified.",
+        },
+    )
+
+    fake_client = RecordingChatClient(
+        rewrite_output={"intent": "document_overview", "query": ""},
+        stream_tokens=["Here is an overview of the quantum error correction paper."],
+    )
+
+    app.dependency_overrides[get_chroma_client] = lambda: chroma_client
+    app.dependency_overrides[get_embedding_function] = lambda: embedder
+    app.dependency_overrides[get_chat_llm_client] = lambda: fake_client
+
+    try:
+        embedder.call_count = 0
+        response = auth_client.post(
             "/api/chat",
-            json={"doc_hash": doc_hash, "message": "thank you"},
+            json={
+                "doc_hash": doc_hash,
+                "message": "Give me an overview of this paper.",
+            },
         )
-        assert response2.status_code == 200
-        assert len(fake_client.rewrite_calls) == 0, (
-            "Expected zero rewrite calls for small talk"
+        assert response.status_code == 200
+        assert embedder.call_count == 0  # Zero vector retrieval calls
+
+        # Assert title_authors_abstract was consumed
+        assert len(fake_client.stream_calls) == 1
+        stream_prompt = fake_client.stream_calls[0]["messages"][-1]["content"]
+        assert "Quantum Error Correction Advances" in stream_prompt
+        assert "Alice & Bob" in stream_prompt
+        assert "Page content for page 35" not in stream_prompt
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_document_overview_under_30_pages_consumes_full_document_text(
+    auth_client: AuthenticatedTestClient, tmp_path: Path
+) -> None:
+    """An intent of 'document_overview' on paper <= 30 pages triggers 0 vector retrieval and consumes full text."""
+    doc_hash = "d" * 64
+    chroma_dir = tmp_path / "chroma_test"
+    chroma_client = chromadb.PersistentClient(path=str(chroma_dir))
+    embedder = RecordingEmbedder()
+
+    # Index document with 5 pages
+    chunks = [
+        {"text": f"Detailed paper content on page {i}", "page": i} for i in range(1, 6)
+    ]
+    asyncio.run(
+        index_document(
+            doc_hash=doc_hash,
+            chunks=chunks,
+            embed_fn=embedder,
+            client=chroma_client,
         )
-        assert embedder.call_count == 0, "Expected zero retrieval calls for small talk"
+    )
+    auth_client.record_ownership(doc_hash)
+
+    fake_client = RecordingChatClient(
+        rewrite_output={"intent": "document_overview", "query": ""},
+        stream_tokens=["Overview based on full text."],
+    )
+
+    app.dependency_overrides[get_chroma_client] = lambda: chroma_client
+    app.dependency_overrides[get_embedding_function] = lambda: embedder
+    app.dependency_overrides[get_chat_llm_client] = lambda: fake_client
+
+    try:
+        embedder.call_count = 0
+        response = auth_client.post(
+            "/api/chat",
+            json={"doc_hash": doc_hash, "message": "What is this paper about?"},
+        )
+        assert response.status_code == 200
+        assert embedder.call_count == 0  # Zero vector retrieval calls
+
+        assert len(fake_client.stream_calls) == 1
+        stream_prompt = fake_client.stream_calls[0]["messages"][-1]["content"]
+        assert "Detailed paper content on page 1" in stream_prompt
+        assert "Detailed paper content on page 5" in stream_prompt
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_outside_paper_intent_returns_refusal_sentence(
+    auth_client: AuthenticatedTestClient, tmp_path: Path
+) -> None:
+    """An intent of 'outside_paper' returns strictly the refusal sentence with zero retrieval calls."""
+    doc_hash = "c" * 64
+    chroma_dir = tmp_path / "chroma_test"
+    chroma_client = chromadb.PersistentClient(path=str(chroma_dir))
+    embedder = RecordingEmbedder()
+
+    asyncio.run(
+        index_document(
+            doc_hash=doc_hash,
+            chunks=[{"text": "Paper on genomics.", "page": 1}],
+            embed_fn=embedder,
+            client=chroma_client,
+        )
+    )
+    auth_client.record_ownership(doc_hash)
+
+    fake_client = RecordingChatClient(
+        rewrite_output={"intent": "outside_paper", "query": ""},
+    )
+
+    app.dependency_overrides[get_chroma_client] = lambda: chroma_client
+    app.dependency_overrides[get_embedding_function] = lambda: embedder
+    app.dependency_overrides[get_chat_llm_client] = lambda: fake_client
+
+    try:
+        embedder.call_count = 0
+        response = auth_client.post(
+            "/api/chat",
+            json={"doc_hash": doc_hash, "message": "What is the capital of Italy?"},
+        )
+        assert response.status_code == 200
+        events = parse_sse_events(response.text)
+        token_events = [e for e in events if e["event"] == "token"]
+        assert len(token_events) == 1
+        assert token_events[0]["data"]["text"] == (
+            "I can only answer questions about this paper. Ask me about its problem, methods, or results."
+        )
+        sources_events = [e for e in events if e["event"] == "sources"]
+        assert sources_events[0]["data"] == []
+        assert embedder.call_count == 0  # Zero vector retrieval calls
     finally:
         app.dependency_overrides.clear()
 

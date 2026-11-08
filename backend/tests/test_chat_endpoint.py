@@ -69,10 +69,11 @@ class FakeChatStream:
 class FakeChatCompletions:
     """Fake chat completions provider."""
 
-    def __init__(self, stream_factory: Any) -> None:
+    def __init__(self, stream_factory: Any, non_stream_content: Any = None) -> None:
         self._stream_factory = stream_factory
         self.call_count = 0
         self.last_messages: list[dict[str, Any]] = []
+        self.non_stream_content = non_stream_content
 
     async def create(self, **kwargs: Any) -> Any:
         self.call_count += 1
@@ -81,6 +82,19 @@ class FakeChatCompletions:
             if callable(self._stream_factory):
                 return self._stream_factory(**kwargs)
             return self._stream_factory
+
+        if callable(self.non_stream_content):
+            content = self.non_stream_content(kwargs)
+        elif self.non_stream_content is not None:
+            content = self.non_stream_content
+        else:
+            msgs = kwargs.get("messages", [])
+            last_msg = msgs[-1]["content"] if msgs else ""
+            if "thank you" in last_msg.lower() or "hello" in last_msg.lower():
+                content = json.dumps({"intent": "chat", "query": ""})
+            else:
+                content = json.dumps({"intent": "document_question", "query": last_msg})
+
         return type(
             "FakeCompletion",
             (),
@@ -89,7 +103,7 @@ class FakeChatCompletions:
                     type(
                         "FakeChoice",
                         (),
-                        {"message": type("FakeMessage", (), {"content": ""})()},
+                        {"message": type("FakeMessage", (), {"content": content})()},
                     )()
                 ]
             },
@@ -99,8 +113,10 @@ class FakeChatCompletions:
 class FakeChatClient:
     """Fake OpenAI client for chat endpoint tests."""
 
-    def __init__(self, stream_factory: Any) -> None:
-        self.completions = FakeChatCompletions(stream_factory)
+    def __init__(self, stream_factory: Any, non_stream_content: Any = None) -> None:
+        self.completions = FakeChatCompletions(
+            stream_factory, non_stream_content=non_stream_content
+        )
         self.chat = type("Chat", (), {"completions": self.completions})()
 
     @property
@@ -195,8 +211,8 @@ def test_prompt_assembly_history_truncation_and_system_isolation() -> None:
         chunks=chunks,
     )
 
-    # 1 system + 10 history (5 turns) + 1 current user turn = 12 messages
-    assert len(messages) == 12
+    # 1 system + 6 history (3 turns) + 1 current user turn = 8 messages
+    assert len(messages) == 8
     assert messages[0]["role"] == "system"
 
     # Assert system message contains none of the retrieved chunk text or history text
@@ -206,8 +222,8 @@ def test_prompt_assembly_history_truncation_and_system_isolation() -> None:
     for h in history:
         assert h.content not in system_text
 
-    # Assert history contains only the last 5 turns (turns 3 through 7), in order
-    expected_history = history[-10:]
+    # Assert history contains only the last 3 turns (turns 5 through 7), in order
+    expected_history = history[-6:]
     for idx, expected_msg in enumerate(expected_history):
         actual_msg = messages[idx + 1]
         assert actual_msg["role"] == expected_msg.role

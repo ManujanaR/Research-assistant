@@ -442,8 +442,8 @@ def assemble_chat_messages(
     """Assemble chat messages with strict system instructions, trimmed history, and excerpt context."""
     messages: list[dict[str, str]] = [{"role": "system", "content": SYSTEM_PROMPT}]
 
-    # Keep only the last 5 turns of history (up to last 10 messages)
-    recent_history = history[-10:] if history else []
+    # Keep strictly the last 3 turns of history (up to last 6 messages)
+    recent_history = history[-6:] if history else []
     for msg in recent_history:
         messages.append({"role": msg.role, "content": msg.content})
 
@@ -689,3 +689,99 @@ async def retrieve(
         )
 
     return retrieved
+
+
+CHAT_SYSTEM_PROMPT = """You are a polite, helpful academic research assistant.
+Rules:
+1. Respond naturally, politely, and warmly to greetings, acknowledgments, or conversational remarks.
+2. NEVER assert, summarize, or mention any facts, findings, or claims about the paper.
+3. Briefly invite the user to ask questions about the paper's problem, methodology, or results."""
+
+OVERVIEW_SYSTEM_PROMPT = """You are a helpful research assistant providing an overview of an academic paper.
+Provide a clear, well-structured, high-level summary of the paper based strictly on the provided text.
+Explain the core problem, methodology, key findings, and conclusions.
+Do not use outside knowledge or extrapolate beyond the provided text."""
+
+OUTSIDE_PAPER_REFUSAL = (
+    "I can only answer questions about this paper. "
+    "Ask me about its problem, methods, or results."
+)
+
+
+def assemble_conversational_messages(
+    message: str,
+    history: list[ChatMessage],
+) -> list[dict[str, str]]:
+    """Assemble conversational chat messages with chat system prompt and last 3 turns of history."""
+    messages: list[dict[str, str]] = [{"role": "system", "content": CHAT_SYSTEM_PROMPT}]
+    recent_history = history[-6:] if history else []
+    for msg in recent_history:
+        messages.append({"role": msg.role, "content": msg.content})
+    messages.append({"role": "user", "content": message})
+    return messages
+
+
+def assemble_overview_messages(
+    message: str,
+    history: list[ChatMessage],
+    context_text: str,
+) -> list[dict[str, str]]:
+    """Assemble overview chat messages with overview system prompt, last 3 turns, and paper text."""
+    messages: list[dict[str, str]] = [
+        {"role": "system", "content": OVERVIEW_SYSTEM_PROMPT}
+    ]
+    recent_history = history[-6:] if history else []
+    for msg in recent_history:
+        messages.append({"role": msg.role, "content": msg.content})
+    user_content = (
+        f"<PAPER_TEXT>\n{context_text.strip()}\n</PAPER_TEXT>\n\nQuestion: {message}"
+    )
+    messages.append({"role": "user", "content": user_content})
+    return messages
+
+
+async def stream_static_message(text: str) -> AsyncIterator[str]:
+    """Stream a static message conforming to the SSE token -> sources -> done protocol."""
+    yield f"event: token\ndata: {json.dumps({'text': text})}\n\n"
+    yield f"event: sources\ndata: {json.dumps([])}\n\n"
+    yield f"event: done\ndata: {json.dumps({})}\n\n"
+
+
+def get_document_page_count(doc_hash: str, client: ClientAPI | None = None) -> int:
+    """Return max page number from Chroma chunks metadata, defaulting to 1."""
+    _validate_hash(doc_hash)
+    if client is None:
+        settings = get_settings()
+        client = chromadb.PersistentClient(path=settings.chroma_dir)
+
+    collection_name = get_chroma_collection_name(doc_hash)
+    try:
+        collection = client.get_collection(name=collection_name)
+        stored = collection.get(include=["metadatas"])
+        metadatas = stored.get("metadatas", []) or []
+        pages = [
+            int(m["page"]) for m in metadatas if isinstance(m, dict) and "page" in m
+        ]
+        return max(pages) if pages else 1
+    except (chromadb.errors.ChromaError, ValueError, KeyError):
+        return 1
+
+
+def get_title_authors_abstract(doc_hash: str) -> str:
+    """Retrieve pre-indexed title_authors_abstract from summary cache."""
+    from app.core.dependencies import get_summary_cache
+
+    cache = get_summary_cache()
+    summary_data = cache.get(doc_hash)
+    if not summary_data:
+        return ""
+    if isinstance(summary_data, dict):
+        if "header" in summary_data and isinstance(summary_data["header"], dict):
+            h = summary_data["header"]
+            return f"{h.get('title', '')} by {h.get('authors', '')}\n\n{h.get('abstract', '')}".strip()
+        if "title_authors_abstract" in summary_data:
+            return str(summary_data["title_authors_abstract"]).strip()
+    elif hasattr(summary_data, "header"):
+        h = summary_data.header
+        return f"{h.title} by {h.authors}\n\n{h.abstract}".strip()
+    return str(summary_data).strip()

@@ -17,18 +17,25 @@ from app.core.dependencies import (
 from app.db.session import get_db
 from app.models.user import User
 from app.schemas.chat import ChatRequest
+from app.services.classifier import classify_and_rewrite
 from app.services.ownership_service import is_owner
 from app.services.qa import (
+    FALLBACK_GROUNDING_MESSAGE,
+    OUTSIDE_PAPER_REFUSAL,
     EmbeddingDimensionMismatchError,
     EmbedFn,
     assemble_chat_messages,
+    assemble_conversational_messages,
+    assemble_overview_messages,
     collection_exists,
     extract_sources,
-    is_greeting_or_smalltalk,
+    get_document_page_count,
+    get_title_authors_abstract,
+    rebuild_text_from_chroma,
     retrieve,
     stream_chat_response,
+    stream_static_message,
 )
-from app.services.query_rewriter import rewrite_query
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +52,7 @@ async def chat(
     llm_client: Annotated[Any, Depends(get_chat_llm_client)],
 ) -> StreamingResponse:
     """Stream grounded chat answers with SSE and source citations for an uploaded paper."""
-    # Step 1: Ownership check runs first, before collection check or retrieval
+    # Step 1: Pre-checks: Ownership check & collection check run first before any model call
     if not is_owner(request.doc_hash, current_user.id, db=db):
         raise HTTPException(
             status_code=404,
@@ -58,12 +65,18 @@ async def chat(
             detail="Document not found. Upload the PDF first.",
         )
 
-    # Greeting and small-talk routing: no rewrite calls and no retrieval calls
-    if is_greeting_or_smalltalk(request.message):
-        messages = assemble_chat_messages(
-            question=request.message,
+    # Step 2: Single structured classifier and query rewriter call
+    classification = await classify_and_rewrite(
+        message=request.message,
+        history=request.history,
+        client=llm_client,
+    )
+
+    # Step 3: Intent execution
+    if classification.intent == "chat":
+        messages = assemble_conversational_messages(
+            message=request.message,
             history=request.history,
-            chunks=[],
         )
         return StreamingResponse(
             stream_chat_response(
@@ -75,17 +88,48 @@ async def chat(
             media_type="text/event-stream",
         )
 
-    # For grounded questions: rewrite the query, retrieve with rewritten query
-    rewritten_query = await rewrite_query(
-        question=request.message,
-        history=request.history,
-        client=llm_client,
-    )
+    if classification.intent == "outside_paper":
+        return StreamingResponse(
+            stream_static_message(OUTSIDE_PAPER_REFUSAL),
+            media_type="text/event-stream",
+        )
+
+    if classification.intent == "document_overview":
+        page_count = get_document_page_count(request.doc_hash, client=chroma_client)
+        if page_count > 30:
+            overview_text = get_title_authors_abstract(request.doc_hash)
+            if not overview_text:
+                overview_text = (
+                    rebuild_text_from_chroma(request.doc_hash, client=chroma_client)
+                    or ""
+                )
+        else:
+            overview_text = rebuild_text_from_chroma(
+                request.doc_hash, client=chroma_client
+            ) or get_title_authors_abstract(request.doc_hash)
+
+        messages = assemble_overview_messages(
+            message=request.message,
+            history=request.history,
+            context_text=overview_text,
+        )
+        return StreamingResponse(
+            stream_chat_response(
+                messages=messages,
+                sources=[],
+                client=llm_client,
+                question=request.message,
+            ),
+            media_type="text/event-stream",
+        )
+
+    # Step 4: Intent is "document_question"
+    search_query = classification.query.strip() or request.message
 
     try:
         chunks = await retrieve(
             doc_hash=request.doc_hash,
-            query=rewritten_query,
+            query=search_query,
             embed_fn=embed_fn,
             top_k=5,
             client=chroma_client,
@@ -137,6 +181,13 @@ async def chat(
         c for c in chunks if c.distance <= settings.citation_max_distance
     ]
     sorted_relevant = sorted(relevant_chunks, key=lambda c: c.distance)[:3]
+
+    if not sorted_relevant:
+        return StreamingResponse(
+            stream_static_message(FALLBACK_GROUNDING_MESSAGE),
+            media_type="text/event-stream",
+        )
+
     sources = extract_sources(sorted_relevant, question=request.message, max_sources=3)
     messages = assemble_chat_messages(
         question=request.message,
