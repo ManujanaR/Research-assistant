@@ -6,6 +6,7 @@ export interface UploadResponse {
   size_bytes: number;
   page_count: number;
   chunk_count: number;
+  ocr_used?: boolean;
 }
 
 export interface SummaryResponse {

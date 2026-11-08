@@ -177,6 +177,92 @@ describe("Frontend UI Components", () => {
         expect(screen.getByText(errorDetail)).toBeDefined();
       });
     });
+
+    it("shows OCR note when upload response has ocr_used true", async () => {
+      const onUploaded = vi.fn();
+      const mockResult = {
+        doc_hash: "b".repeat(64),
+        filename: "scanned.pdf",
+        size_bytes: 4096,
+        page_count: 3,
+        chunk_count: 8,
+        ocr_used: true,
+      };
+
+      vi.mocked(uploadPdf).mockResolvedValueOnce(mockResult);
+
+      render(<UploadZone onUploaded={onUploaded} />);
+
+      const file = new File(["scanned bytes"], "scanned.pdf", {
+        type: "application/pdf",
+      });
+      const input = document.querySelector(
+        'input[type="file"]'
+      ) as HTMLInputElement;
+
+      fireEvent.change(input, { target: { files: [file] } });
+
+      await waitFor(() => {
+        expect(
+          screen.getByText(
+            "This paper was read with OCR. Check the summary against the original."
+          )
+        ).toBeDefined();
+      });
+    });
+
+    it("does not show OCR note when upload response has ocr_used false or omitted", async () => {
+      const onUploaded = vi.fn();
+      const mockResult = {
+        doc_hash: "c".repeat(64),
+        filename: "digital.pdf",
+        size_bytes: 4096,
+        page_count: 3,
+        chunk_count: 8,
+        ocr_used: false,
+      };
+
+      vi.mocked(uploadPdf).mockResolvedValueOnce(mockResult);
+
+      render(<UploadZone onUploaded={onUploaded} />);
+
+      const file = new File(["digital bytes"], "digital.pdf", {
+        type: "application/pdf",
+      });
+      const input = document.querySelector(
+        'input[type="file"]'
+      ) as HTMLInputElement;
+
+      fireEvent.change(input, { target: { files: [file] } });
+
+      await waitFor(() => {
+        expect(onUploaded).toHaveBeenCalledWith(mockResult);
+      });
+
+      expect(
+        screen.queryByText(
+          "This paper was read with OCR. Check the summary against the original."
+        )
+      ).toBeNull();
+    });
+
+    it("shows OCR note when ocr_used prop is true and hides when false", () => {
+      const { rerender } = render(
+        <UploadZone onUploaded={() => {}} ocr_used={true} />
+      );
+      expect(
+        screen.getByText(
+          "This paper was read with OCR. Check the summary against the original."
+        )
+      ).toBeDefined();
+
+      rerender(<UploadZone onUploaded={() => {}} ocr_used={false} />);
+      expect(
+        screen.queryByText(
+          "This paper was read with OCR. Check the summary against the original."
+        )
+      ).toBeNull();
+    });
   });
 
   describe("SummaryView", () => {

@@ -7,6 +7,8 @@ import { ApiError, UploadResponse, uploadPdf } from "@/lib/api";
 export interface UploadZoneProps {
   onUploaded: (result: UploadResponse) => void;
   disabled?: boolean;
+  ocr_used?: boolean;
+  ocrUsed?: boolean;
 }
 
 const MAX_UPLOAD_MB =
@@ -14,11 +16,25 @@ const MAX_UPLOAD_MB =
     ? Number(process.env.NEXT_PUBLIC_MAX_UPLOAD_MB)
     : 20;
 
-export function UploadZone({ onUploaded, disabled = false }: UploadZoneProps) {
+export function UploadZone({
+  onUploaded,
+  disabled = false,
+  ocr_used,
+  ocrUsed: ocrUsedProp,
+}: UploadZoneProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
+  const [ocrUsed, setOcrUsed] = useState(Boolean(ocr_used ?? ocrUsedProp));
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  React.useEffect(() => {
+    if (ocr_used !== undefined) {
+      setOcrUsed(ocr_used);
+    } else if (ocrUsedProp !== undefined) {
+      setOcrUsed(ocrUsedProp);
+    }
+  }, [ocr_used, ocrUsedProp]);
 
   const validateFile = (file: File): string | null => {
     const isPdfMime = file.type === "application/pdf";
@@ -48,6 +64,11 @@ export function UploadZone({ onUploaded, disabled = false }: UploadZoneProps) {
     setIsLoading(true);
     try {
       const response = await uploadPdf(file);
+      if (response.ocr_used) {
+        setOcrUsed(true);
+      } else {
+        setOcrUsed(false);
+      }
       onUploaded(response);
     } catch (err) {
       if (err instanceof ApiError) {
@@ -158,6 +179,16 @@ export function UploadZone({ onUploaded, disabled = false }: UploadZoneProps) {
           </div>
         )}
       </div>
+
+      {ocrUsed && (
+        <div
+          data-testid="ocr-note"
+          className="mt-3.5 flex items-start gap-2.5 p-3.5 text-sm text-amber-800 dark:text-amber-200 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/60 rounded-xl"
+        >
+          <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5 text-amber-600 dark:text-amber-400" />
+          <span>This paper was read with OCR. Check the summary against the original.</span>
+        </div>
+      )}
 
       {error && (
         <div
