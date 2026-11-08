@@ -289,3 +289,14 @@ Authentication is in scope for this project. Users sign up and sign in with an e
 - Social sign-in.
 - Email verification.
 - Shared documents between users.
+
+## 13. Export
+
+- A user can export the current paper’s summary and conversation as a Word document (.docx).
+- The export is generated on the server from the stored summary and the conversation messages sent in the request. It makes no LLM call and no network request.
+- The export request contains the document hash and up to 200 messages, each with a role (user or assistant), text of at most 4000 characters, and optional sources (page number and snippet, snippet at most 200 characters).
+- Ownership applies: non-owners and unknown documents get 404 with the same body. Unauthenticated requests get 401.
+- The file name is `mitra-report-{first 8 characters of doc_hash}.docx`.
+- The file contains, in order: a title “Mitra Research Assistant Report”, the paper’s filename, a generated date, the five summary sections with headings, then a “Conversation” section with each question followed by its answer and numbered sources with page numbers, then a “My notes” heading after the summary and after each answer, with an empty paragraph under it.
+- The footer on each page states: “Answers are grounded in retrieved passages of the uploaded paper. Verify against the source.”
+- The export contains no hidden fields, no macros, and no links to external sites.

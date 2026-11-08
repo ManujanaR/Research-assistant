@@ -162,49 +162,13 @@ Default theme: light.
 
   * Drag & Drop file dropzone with supported format indicators (`PDF only`).
 
-## 4.6 Print Report
+## 4.7 Export
 
-One button, **Print report**, prints a single document containing the summary and the chat history.
-
-### Document layout
-
-Top to bottom:
-
-1. **Header**
-   - "Mitra Research Assistant"
-   - The paper's filename
-   - "Generated [date]", set when the button is clicked
-
-2. **Summary**
-   - The five sections in order, each with its heading:
-     1. Title, Authors & Abstract
-     2. Problem Statement
-     3. Methodology
-     4. Key Results
-     5. Conclusion
-
-3. **Conversation**
-   - Each exchange shown as a *Question* followed by an *Answer*.
-   - Numbered citations listed under each answer.
-   - Page numbers shown when present.
-   - Citations labelled **Retrieved passages**.
-
-4. **Footer**
-   - "Answers are grounded in retrieved passages of the uploaded paper. Verify against the source."
-
-### States
-
-| Condition | Behaviour |
-|---|---|
-| No summary and no messages | Button disabled. Visible reason: "Upload a paper first." |
-| Summary loaded, no messages | Print the summary only. Omit the Conversation section. |
-| Summary and messages present | Print the full document. |
-
-### Print styling
-
-- Light background, black text, clear heading hierarchy.
-- Hide the app shell in print.
-- Print styles apply only when printing. The on-screen app is unchanged.
+The top bar button is labelled “Export”. Its tooltip reads “Downloads an editable Word file.”
+Disabled, with the reason “Upload a paper first.”, when there is no summary.
+Clicking shows a short “Preparing file” state, then starts the download.
+Errors show the server message, as text.
+The print styles are removed.
 
 ## 5. How You Can Customize This Frontend
 
