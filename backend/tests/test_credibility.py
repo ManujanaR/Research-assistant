@@ -244,7 +244,7 @@ async def test_openalex_api_fetch_and_parse() -> None:
     """Case 6: Querying OpenAlex Works API extracts title, venue, citations, year, and institution affiliations."""
 
     def handler(request: httpx.Request) -> httpx.Response:
-        assert "ResearchAssistantApp/1.0" in request.headers.get("User-Agent", "")
+        assert "ResearchAssistant/1.0" in request.headers.get("User-Agent", "")
         assert "search=" in str(request.url)
         return httpx.Response(
             200,
