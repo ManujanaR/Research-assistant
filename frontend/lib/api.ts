@@ -544,21 +544,25 @@ export async function exportReport(
 }
 
 export interface CredibilitySignals {
-  venue_points: number;
-  citation_points: number;
-  reference_points: number;
-  affiliation_points: number;
-  structure_points: number;
-  bonus_points: number;
+  venue_points?: number;
+  citation_points?: number;
+  reference_points?: number;
+  affiliation_points?: number;
+  structure_points?: number;
+  bonus_points?: number;
   matched_venue?: string | null;
-  estimated_references: number;
-  recorded_citations: number;
+  reference_count_estimated?: number;
+  citation_count?: number;
+  author_academic_affiliation?: boolean;
+  structure_sections_found?: number;
   publication_year?: number | null;
-  has_doi: boolean;
+  has_doi?: boolean;
   doi?: string | null;
-  has_academic_affiliation: boolean;
-  structure_sections_found: number;
-  open_artifacts_detected: boolean;
+  open_artifacts_detected?: boolean;
+  // Aliases for compatibility
+  estimated_references?: number;
+  recorded_citations?: number;
+  has_academic_affiliation?: boolean;
 }
 
 export interface CredibilityResponse {

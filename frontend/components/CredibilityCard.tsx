@@ -170,7 +170,7 @@ export function CredibilityCard({ docHash }: CredibilityCardProps) {
         {/* 1. Venue */}
         <div className="flex items-start justify-between gap-2">
           <span className="flex items-center gap-1.5 text-text-secondary">
-            {signals.venue_points > 0 ? (
+            {(signals.venue_points ?? 0) > 0 ? (
               <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" />
             ) : (
               <XCircle className="w-3.5 h-3.5 text-text-muted flex-shrink-0" />
@@ -188,7 +188,7 @@ export function CredibilityCard({ docHash }: CredibilityCardProps) {
         {/* 2. References */}
         <div className="flex items-center justify-between gap-2">
           <span className="flex items-center gap-1.5 text-text-secondary whitespace-nowrap">
-            {signals.reference_points >= 10 ? (
+            {(signals.reference_points ?? 0) >= 10 ? (
               <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" />
             ) : (
               <AlertCircle className="w-3.5 h-3.5 text-amber-500 flex-shrink-0" />
@@ -200,9 +200,9 @@ export function CredibilityCard({ docHash }: CredibilityCardProps) {
               data-testid="ref-count-text"
               className="font-medium text-text-primary whitespace-nowrap"
             >
-              {signals.estimated_references} detected
+              {(signals.reference_count_estimated ?? signals.estimated_references ?? 0)} detected
             </span>
-            {signals.estimated_references < 20 && (
+            {(signals.reference_count_estimated ?? signals.estimated_references ?? 0) < 20 && (
               <span
                 data-testid="ref-estimate-tooltip"
                 title="Estimated from layout"
@@ -217,7 +217,7 @@ export function CredibilityCard({ docHash }: CredibilityCardProps) {
         {/* 3. Citations */}
         <div className="flex items-center justify-between gap-2">
           <span className="flex items-center gap-1.5 text-text-secondary whitespace-nowrap">
-            {signals.citation_points >= 15 ? (
+            {(signals.citation_points ?? 0) >= 15 ? (
               <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" />
             ) : (
               <AlertCircle className="w-3.5 h-3.5 text-amber-500 flex-shrink-0" />
@@ -225,8 +225,8 @@ export function CredibilityCard({ docHash }: CredibilityCardProps) {
             Citations
           </span>
           <span className="font-medium text-text-primary text-right whitespace-nowrap flex-shrink-0">
-            {signals.recorded_citations > 0
-              ? `${signals.recorded_citations} recorded`
+            {(signals.citation_count ?? signals.recorded_citations ?? 0) > 0
+              ? `${signals.citation_count ?? signals.recorded_citations ?? 0} recorded`
               : "Recent baseline"}
           </span>
         </div>
@@ -234,7 +234,7 @@ export function CredibilityCard({ docHash }: CredibilityCardProps) {
         {/* 4. Affiliation */}
         <div className="flex items-center justify-between gap-2">
           <span className="flex items-center gap-1.5 text-text-secondary whitespace-nowrap">
-            {signals.has_academic_affiliation ? (
+            {(signals.author_academic_affiliation ?? signals.has_academic_affiliation) ? (
               <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" />
             ) : (
               <XCircle className="w-3.5 h-3.5 text-text-muted flex-shrink-0" />
@@ -242,7 +242,7 @@ export function CredibilityCard({ docHash }: CredibilityCardProps) {
             Affiliation
           </span>
           <span className="font-medium text-text-primary text-right truncate max-w-[130px]">
-            {signals.has_academic_affiliation
+            {(signals.author_academic_affiliation ?? signals.has_academic_affiliation)
               ? "Academic (.edu / ac)"
               : "No academic domain"}
           </span>
@@ -251,7 +251,7 @@ export function CredibilityCard({ docHash }: CredibilityCardProps) {
         {/* 5. Structure */}
         <div className="flex items-center justify-between gap-2">
           <span className="flex items-center gap-1.5 text-text-secondary whitespace-nowrap">
-            {signals.structure_sections_found >= 3 ? (
+            {(signals.structure_sections_found ?? 0) >= 3 ? (
               <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" />
             ) : (
               <AlertCircle className="w-3.5 h-3.5 text-amber-500 flex-shrink-0" />
@@ -262,7 +262,7 @@ export function CredibilityCard({ docHash }: CredibilityCardProps) {
             data-testid="section-count-text"
             className="font-medium text-text-primary text-right whitespace-nowrap flex-shrink-0"
           >
-            {signals.structure_sections_found}/4 sections
+            {(signals.structure_sections_found ?? 0)}/4 sections
           </span>
         </div>
       </div>

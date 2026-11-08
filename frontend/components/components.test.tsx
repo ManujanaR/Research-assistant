@@ -1644,5 +1644,74 @@ describe("Frontend UI Components", () => {
       expect(sectionCountEl.textContent).toBe("3/4 sections");
       expect(sectionCountEl.className).toContain("whitespace-nowrap");
     });
+
+    it("renders '0 detected' and '0/4 sections' without blank clipping when counts are 0 or undefined", async () => {
+      const zeroData: CredibilityResponse = {
+        status: "completed",
+        external_check: "not_matched",
+        score: 42,
+        badge_label: "Unindexed Draft",
+        badge_variant: "neutral",
+        signals: {
+          reference_count_estimated: 0,
+          citation_count: 0,
+          author_academic_affiliation: false,
+          structure_sections_found: 0,
+        },
+        disclaimer: "Reporting signals score.",
+      };
+
+      vi.mocked(getDocumentCredibility).mockResolvedValueOnce(zeroData);
+
+      render(<CredibilityCard docHash="test-zero-doc" />);
+
+      await waitFor(() => {
+        expect(screen.getByTestId("credibility-card")).toBeDefined();
+      });
+
+      const badge = screen.getByTestId("credibility-badge");
+      expect(badge.textContent).toBe("Unindexed Draft");
+
+      const refCountEl = screen.getByTestId("ref-count-text");
+      expect(refCountEl.textContent).toBe("0 detected");
+
+      const sectionCountEl = screen.getByTestId("section-count-text");
+      expect(sectionCountEl.textContent).toBe("0/4 sections");
+    });
+
+    it("renders 'Indexed in OpenAlex' badge when score >= 75", async () => {
+      const openAlexData: CredibilityResponse = {
+        status: "completed",
+        external_check: "matched",
+        score: 85,
+        badge_label: "Indexed in OpenAlex",
+        badge_variant: "success",
+        signals: {
+          reference_count_estimated: 25,
+          citation_count: 50,
+          author_academic_affiliation: true,
+          structure_sections_found: 4,
+          matched_venue: "IEEE Transactions on Pattern Analysis and Machine Intelligence",
+          venue_points: 35,
+          citation_points: 25,
+          reference_points: 20,
+          affiliation_points: 10,
+          structure_points: 10,
+        },
+        disclaimer: "Reporting signals score.",
+      };
+
+      vi.mocked(getDocumentCredibility).mockResolvedValueOnce(openAlexData);
+
+      render(<CredibilityCard docHash="test-openalex-doc" />);
+
+      await waitFor(() => {
+        expect(screen.getByTestId("credibility-card")).toBeDefined();
+      });
+
+      const badge = screen.getByTestId("credibility-badge");
+      expect(badge.textContent).toBe("Indexed in OpenAlex");
+      expect(badge.className).toContain("text-emerald-700");
+    });
   });
 });
