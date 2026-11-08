@@ -31,6 +31,22 @@ export interface UserResponse {
   email: string;
 }
 
+export interface ExportSource {
+  page_number?: number | null;
+  snippet?: string | null;
+}
+
+export interface ExportMessage {
+  role: "user" | "assistant";
+  text: string;
+  sources?: ExportSource[];
+}
+
+export interface ExportResponse {
+  blob: Blob;
+  filename: string;
+}
+
 export class ApiError extends Error {
   readonly status: number;
   readonly detail: string;
@@ -101,6 +117,8 @@ export async function parseErrorResponse(response: Response): Promise<ApiError> 
     if (!detail || detail.toLowerCase().includes("unauthorized") || detail === "Not authenticated") {
       detail = detail || "Email or password is incorrect.";
     }
+  } else if (status === 404) {
+    detail = detail || "Document not found. Upload the PDF first.";
   } else if (status === 409) {
     detail = detail || "An account with this email already exists.";
   } else if (status === 422) {
@@ -389,3 +407,40 @@ export async function streamChat(
     handlers.onError("Stream closed unexpectedly before completion");
   }
 }
+
+export async function exportReport(
+  docHash: string,
+  messages: ExportMessage[] = []
+): Promise<ExportResponse> {
+  let response: Response;
+  try {
+    response = await fetch(`${BASE_URL}/api/export`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      credentials: "include",
+      body: JSON.stringify({
+        doc_hash: docHash,
+        messages: messages.slice(-200),
+      }),
+    });
+  } catch (err) {
+    throw new ApiError(0, err instanceof Error ? err.message : "Network error");
+  }
+
+  if (!response.ok) {
+    throw await parseErrorResponse(response);
+  }
+
+  const blob = await response.blob();
+  const contentDisposition = response.headers.get("Content-Disposition") || "";
+  let filename = `mitra-report-${docHash.slice(0, 8)}.docx`;
+  const match = contentDisposition.match(/filename="?([^";]+)"?/i);
+  if (match && match[1]) {
+    filename = match[1].trim();
+  }
+
+  return { blob, filename };
+}
+

@@ -15,7 +15,7 @@ import { SourceCard } from "./SourceCard";
 import { SourcePanel } from "./SourcePanel";
 import { StudioPanel } from "./StudioPanel";
 import { ChatPanel } from "./ChatPanel";
-import { PrintReport } from "./PrintReport";
+import { ExportButton } from "./ExportButton";
 import { ThemeToggle } from "./ThemeToggle";
 import { AuthPanel } from "./AuthPanel";
 import { SignOutButton } from "./SignOutButton";
@@ -30,6 +30,7 @@ import {
   signIn,
   signUp,
   signOut,
+  exportReport,
   SummaryResponse,
 } from "@/lib/api";
 
@@ -44,6 +45,7 @@ vi.mock("@/lib/api", async () => {
     signIn: vi.fn(),
     signUp: vi.fn(),
     signOut: vi.fn(),
+    exportReport: vi.fn(),
   };
 });
 
@@ -804,106 +806,130 @@ describe("Frontend UI Components", () => {
     });
   });
 
-  describe("PrintReport", () => {
-    const mockSummary: SummaryResponse = {
-      title_authors_abstract: "Attention Mechanism Title",
-      problem_statement: "Attention Problem Statement",
-      methodology: "Attention Methodology",
-      key_results: "Attention Key Results",
-      conclusion: "Attention Conclusion",
-    };
-
-    beforeEach(() => {
-      window.print = vi.fn();
-    });
-
-    it("disabled, with the visible reason, when there is no summary", () => {
-      render(<PrintReport summary={null} messages={[]} />);
-      const btn = screen.getByRole("button", { name: /print report/i }) as HTMLButtonElement;
+  describe("ExportButton", () => {
+    it("disabled with the visible reason when there is no summary", () => {
+      render(<ExportButton docHash={null} messages={[]} />);
+      const btn = screen.getByRole("button", { name: /export/i }) as HTMLButtonElement;
       expect(btn.disabled).toBe(true);
       expect(screen.getByText("Upload a paper first.")).toBeDefined();
     });
 
-    it("enabled after a summary loads", () => {
-      render(<PrintReport summary={mockSummary} messages={[]} />);
-      const btn = screen.getByRole("button", { name: /print report/i }) as HTMLButtonElement;
+    it("enabled when a summary docHash is present", () => {
+      render(<ExportButton docHash={"a".repeat(64)} messages={[]} />);
+      const btn = screen.getByRole("button", { name: /export/i }) as HTMLButtonElement;
       expect(btn.disabled).toBe(false);
       expect(screen.queryByText("Upload a paper first.")).toBeNull();
     });
 
-    it("clicking calls window.print once and date is not rendered before a click", () => {
-      render(<PrintReport summary={mockSummary} messages={[]} />);
-      expect(screen.queryByText(/Generated/i)).toBeNull();
+    it("clicking calls exportReport once with the document hash and at most 200 messages", async () => {
+      vi.mocked(exportReport).mockResolvedValueOnce({
+        blob: new Blob(["docx data"]),
+        filename: "mitra-report-12345678.docx",
+      });
 
-      const btn = screen.getByRole("button", { name: /print report/i });
+      const manyMessages = Array.from({ length: 250 }, (_, i) => ({
+        role: "user" as const,
+        text: `Message ${i}`,
+        sources: [],
+      }));
+
+      const docHash = "1234567890abcdef".repeat(4);
+      render(<ExportButton docHash={docHash} messages={manyMessages} />);
+
+      const btn = screen.getByRole("button", { name: /export/i });
       fireEvent.click(btn);
 
-      expect(window.print).toHaveBeenCalledTimes(1);
-      expect(screen.getByText(/Generated/i)).toBeDefined();
+      await waitFor(() => {
+        expect(exportReport).toHaveBeenCalledTimes(1);
+      });
+
+      const [calledHash, calledMessages] = vi.mocked(exportReport).mock.calls[0];
+      expect(calledHash).toBe(docHash);
+      expect(calledMessages).toBeDefined();
+      expect(calledMessages!.length).toBeLessThanOrEqual(200);
+      expect(calledMessages!.length).toBe(200);
     });
 
-    it("the print document has the five section headings in order, followed by the conversation", () => {
-      const messages = [
-        { role: "user" as const, content: "What is the problem?" },
-        { role: "assistant" as const, content: "The problem is latency." },
-      ];
-      render(
-        <PrintReport
-          summary={mockSummary}
-          messages={messages}
-          filename="test-paper.pdf"
-        />
+    it("the download starts, using the filename from the response", async () => {
+      const mockBlob = new Blob(["docx data"]);
+      vi.mocked(exportReport).mockResolvedValueOnce({
+        blob: mockBlob,
+        filename: "mitra-report-abcdef12.docx",
+      });
+
+      const createObjectURLMock = vi.fn().mockReturnValue("blob:http://localhost/test-uuid");
+      const revokeObjectURLMock = vi.fn();
+      window.URL.createObjectURL = createObjectURLMock;
+      window.URL.revokeObjectURL = revokeObjectURLMock;
+
+      const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, "click");
+
+      render(<ExportButton docHash={"a".repeat(64)} messages={[]} />);
+      const btn = screen.getByRole("button", { name: /export/i });
+      fireEvent.click(btn);
+
+      await waitFor(() => {
+        expect(createObjectURLMock).toHaveBeenCalledWith(mockBlob);
+        expect(clickSpy).toHaveBeenCalledTimes(1);
+        expect(revokeObjectURLMock).toHaveBeenCalledWith("blob:http://localhost/test-uuid");
+      });
+
+      clickSpy.mockRestore();
+    });
+
+    it("a 404 shows its error text", async () => {
+      vi.mocked(exportReport).mockRejectedValueOnce(
+        new ApiError(404, "Document not found. Upload the PDF first.")
       );
 
-      const doc = document.querySelector("#print-report-document");
-      expect(doc).toBeDefined();
-      const text = doc?.textContent || "";
+      render(<ExportButton docHash={"a".repeat(64)} messages={[]} />);
+      const btn = screen.getByRole("button", { name: /export/i });
+      fireEvent.click(btn);
 
-      const idx1 = text.indexOf("Title, Authors & Abstract");
-      const idx2 = text.indexOf("Problem Statement");
-      const idx3 = text.indexOf("Methodology");
-      const idx4 = text.indexOf("Key Results");
-      const idx5 = text.indexOf("Conclusion");
-      const idxConv = text.indexOf("Conversation");
-
-      expect(idx1).toBeGreaterThan(-1);
-      expect(idx2).toBeGreaterThan(idx1);
-      expect(idx3).toBeGreaterThan(idx2);
-      expect(idx4).toBeGreaterThan(idx3);
-      expect(idx5).toBeGreaterThan(idx4);
-      expect(idxConv).toBeGreaterThan(idx5);
+      await waitFor(() => {
+        expect(screen.getByText("Document not found. Upload the PDF first.")).toBeDefined();
+      });
     });
 
-    it("with no messages, the Conversation section is absent", () => {
-      render(<PrintReport summary={mockSummary} messages={[]} />);
-      const doc = document.querySelector("#print-report-document");
-      expect(doc?.textContent).not.toContain("Conversation");
+    it("the button is disabled while the request runs", async () => {
+      let resolvePromise!: (val: { blob: Blob; filename: string }) => void;
+      const pendingPromise = new Promise<{ blob: Blob; filename: string }>((resolve) => {
+        resolvePromise = resolve;
+      });
+      vi.mocked(exportReport).mockReturnValueOnce(pendingPromise);
+
+      render(<ExportButton docHash={"a".repeat(64)} messages={[]} />);
+      const btn = screen.getByRole("button", { name: /export/i });
+      fireEvent.click(btn);
+
+      await waitFor(() => {
+        const preparingBtn = screen.getByRole("button", { name: /preparing file/i }) as HTMLButtonElement;
+        expect(preparingBtn.disabled).toBe(true);
+        expect(screen.getByText("Preparing file")).toBeDefined();
+      });
+
+      resolvePromise({ blob: new Blob(["done"]), filename: "mitra-report.docx" });
+      await waitFor(() => {
+        expect(screen.getByRole("button", { name: /export/i })).toBeDefined();
+      });
     });
 
-    it("an answer with two sources shows both page numbers, and the footer disclaimer is present", () => {
-      const messages = [
-        { role: "user" as const, content: "Explain baseline comparison" },
-        {
-          role: "assistant" as const,
-          content: "The baseline was compared to previous models.",
-          sources: [
-            { page_number: 3, snippet: "RNN baseline snippet" },
-            { page_number: 9, snippet: "CNN baseline snippet" },
-          ],
-        },
-      ];
-      render(<PrintReport summary={mockSummary} messages={messages} />);
-      const doc = document.querySelector("#print-report-document");
-      const text = doc?.textContent || "";
+    it("window.print is never called", async () => {
+      window.print = vi.fn();
+      vi.mocked(exportReport).mockResolvedValueOnce({
+        blob: new Blob(["docx data"]),
+        filename: "mitra-report-test.docx",
+      });
 
-      expect(text).toContain("Page 3");
-      expect(text).toContain("Page 9");
-      expect(text).toContain("Retrieved passages");
-      expect(
-        text
-      ).toContain(
-        "Answers are grounded in retrieved passages of the uploaded paper. Verify against the source."
-      );
+      render(<ExportButton docHash={"a".repeat(64)} messages={[]} />);
+      const btn = screen.getByRole("button", { name: /export/i });
+      fireEvent.click(btn);
+
+      await waitFor(() => {
+        expect(exportReport).toHaveBeenCalledTimes(1);
+      });
+
+      expect(window.print).not.toHaveBeenCalled();
     });
   });
 
