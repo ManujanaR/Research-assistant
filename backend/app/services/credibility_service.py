@@ -73,7 +73,7 @@ def extract_title_from_page_1(page_1_text: str) -> str | None:
         return None
 
     paragraphs = [p.strip() for p in page_1_text.split("\n\n") if p.strip()]
-    if not paragraphs:
+    if len(paragraphs) <= 1:
         paragraphs = [p.strip() for p in page_1_text.splitlines() if p.strip()]
 
     # Skip boilerplate header tokens like arXiv / DOI / ISSN / dates

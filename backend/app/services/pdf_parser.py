@@ -43,6 +43,33 @@ class ParsedDocument(BaseModel):
     page_count: int = Field(..., ge=0)
     chunks: list[dict[str, Any]]
     ocr_used: bool = False
+    header_block: str = ""
+
+
+def extract_page_1_header(page_1_text: str) -> str:
+    """Extract raw text block appearing above the title on Page 1 (e.g. conference headers, organization text)."""
+    if not page_1_text:
+        return ""
+
+    from app.services.credibility_service import extract_title_from_page_1
+
+    title = extract_title_from_page_1(page_1_text)
+    if not title:
+        paragraphs = [p.strip() for p in page_1_text.split("\n\n") if p.strip()]
+        if len(paragraphs) > 1:
+            return paragraphs[0]
+        return ""
+
+    title_words = [w for w in re.split(r"\s+", title.strip()) if w]
+    prefix = " ".join(title_words[: min(4, len(title_words))])
+    idx = page_1_text.lower().find(prefix.lower())
+    if idx <= 0:
+        idx = page_1_text.lower().find(title.lower())
+
+    if idx > 0:
+        return page_1_text[:idx].strip()
+
+    return ""
 
 
 def _clean_glyphs(text: str) -> str:
@@ -124,6 +151,7 @@ def parse_pdf(pdf_bytes: bytes) -> ParsedDocument:
             )
 
         raw_pages_lines: list[list[str]] = []
+        raw_pages_text: list[str] = []
         total_extracted_len = 0
 
         for page_index in range(page_count):
@@ -131,6 +159,7 @@ def parse_pdf(pdf_bytes: bytes) -> ParsedDocument:
             raw_text = page.get_text()
             total_extracted_len += len(raw_text.strip())
             cleaned_text = _clean_glyphs(raw_text)
+            raw_pages_text.append(cleaned_text)
 
             # Lines for header/footer comparison
             lines = [line.strip() for line in cleaned_text.splitlines() if line.strip()]
@@ -195,12 +224,14 @@ def parse_pdf(pdf_bytes: bytes) -> ParsedDocument:
                     )
 
                 raw_pages_lines = []
+                raw_pages_text = []
                 total_extracted_len = 0
                 for page_index in range(page_count):
                     page = doc.load_page(page_index)
                     raw_text = page.get_text()
                     total_extracted_len += len(raw_text.strip())
                     cleaned_text = _clean_glyphs(raw_text)
+                    raw_pages_text.append(cleaned_text)
                     lines = [
                         line.strip()
                         for line in cleaned_text.splitlines()
@@ -265,6 +296,11 @@ def parse_pdf(pdf_bytes: bytes) -> ParsedDocument:
                 if count > (page_count / 2)
             }
 
+        page_1_header = ""
+        if raw_pages_text:
+            page_1_raw_text = raw_pages_text[0]
+            page_1_header = extract_page_1_header(page_1_raw_text)
+
         all_chunks: list[dict[str, Any]] = []
 
         for page_index in range(page_count):
@@ -274,7 +310,10 @@ def parse_pdf(pdf_bytes: bytes) -> ParsedDocument:
             filtered_lines = [
                 line
                 for line in lines
-                if line not in repeated_headers_footers and not line.isdigit()
+                if (
+                    (page_index == 0 and page_1_header and line in page_1_header)
+                    or (line not in repeated_headers_footers and not line.isdigit())
+                )
             ]
 
             if not filtered_lines:
@@ -290,8 +329,15 @@ def parse_pdf(pdf_bytes: bytes) -> ParsedDocument:
                 "The uploaded PDF contains no extractable text. Scanned documents or image-only PDFs are not supported."
             )
 
+        # Ingestion Header Retention: ensure raw text block above the title on Page 1 is preserved and prepended
+        if page_1_header and all_chunks and page_1_header not in all_chunks[0]["text"]:
+            all_chunks[0]["text"] = f"{page_1_header}\n\n{all_chunks[0]['text']}"
+
         return ParsedDocument(
-            page_count=page_count, chunks=all_chunks, ocr_used=ocr_used
+            page_count=page_count,
+            chunks=all_chunks,
+            ocr_used=ocr_used,
+            header_block=page_1_header,
         )
     finally:
         doc.close()

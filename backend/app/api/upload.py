@@ -1,7 +1,7 @@
 import logging
 import os
 import tempfile
-from typing import Annotated
+from typing import Annotated, Any
 
 import openai
 from chromadb.api import ClientAPI
@@ -9,6 +9,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Up
 from sqlalchemy.orm import Session
 
 from app.core.dependencies import (
+    get_chat_llm_client,
     get_chroma_client,
     get_current_user,
     get_embedding_function,
@@ -19,6 +20,10 @@ from app.models.credibility import DocumentCredibility
 from app.models.user import User
 from app.schemas.upload import UploadResponse
 from app.services.credibility_service import evaluate_document_credibility
+from app.services.metadata_service import (
+    extract_header_metadata,
+    save_document_metadata,
+)
 from app.services.ownership_service import record_owner
 from app.services.pdf_parser import (
     NoExtractableTextError,
@@ -61,6 +66,7 @@ async def upload_document(
     chroma_client: Annotated[ClientAPI, Depends(get_chroma_client)],
     embed_fn: Annotated[EmbedFn, Depends(get_embedding_function)],
     background_tasks: BackgroundTasks,
+    llm_client: Annotated[Any, Depends(get_chat_llm_client)],
 ) -> UploadResponse:
     """Accept, validate, parse, index into ChromaDB, and populate paper text store."""
     doc_hash, filename, size_bytes, file_bytes = await validate_and_hash_upload(file)
@@ -78,6 +84,17 @@ async def upload_document(
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         except PdfParseError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+        # Dynamic header metadata extraction (fails safely to nulls)
+        header_metadata = await extract_header_metadata(
+            parsed_doc.header_block, client=llm_client
+        )
+        save_document_metadata(
+            doc_hash=doc_hash,
+            metadata=header_metadata,
+            header_text=parsed_doc.header_block,
+            db=db,
+        )
 
         # Populate paper text store with full extracted text
         full_text = "\n\n".join(chunk["text"] for chunk in parsed_doc.chunks)

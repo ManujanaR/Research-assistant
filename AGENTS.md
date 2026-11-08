@@ -127,6 +127,8 @@ Credibility and reporting signals:
 - External network transmission constraints:
   * Only the extracted document Title, DOI, or arXiv identifier may be transmitted to external verification APIs (Crossref, Semantic Scholar).
   * The document body text, extracted chunks, chat history, and user IDs must NEVER be sent to external services.
+- Dynamic header metadata extraction:
+  * The dynamic header extraction uses an internal structured call on text already parsed by the application. It receives STRICTLY the isolated Page 1 header block (never the document body) and does not transmit data to external third parties.
 
 ## Things to avoid
 
