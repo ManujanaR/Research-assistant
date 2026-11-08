@@ -113,6 +113,7 @@ async def upload_document(
             size_bytes=size_bytes,
             page_count=parsed_doc.page_count,
             chunk_count=len(parsed_doc.chunks),
+            ocr_used=parsed_doc.ocr_used,
         )
     finally:
         if os.path.exists(temp_path):

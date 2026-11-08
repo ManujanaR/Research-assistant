@@ -60,6 +60,8 @@ class Settings(BaseSettings):
         default=".cache/summaries", alias="SUMMARY_CACHE_DIR"
     )
     chroma_dir: str = Field(default=".chroma", alias="CHROMA_DIR")
+    ocr_enabled: bool = Field(default=True, alias="OCR_ENABLED")
+    ocr_timeout_seconds: int = Field(default=120, gt=0, alias="OCR_TIMEOUT_SECONDS")
 
     environment: str = Field(default="development", alias="ENVIRONMENT")
     auth_secret_key: str = Field(default="", alias="AUTH_SECRET_KEY")
@@ -97,6 +99,14 @@ class Settings(BaseSettings):
     @property
     def REWRITE_HISTORY_TURNS(self) -> int:
         return self.rewrite_history_turns
+
+    @property
+    def OCR_ENABLED(self) -> bool:
+        return self.ocr_enabled
+
+    @property
+    def OCR_TIMEOUT_SECONDS(self) -> int:
+        return self.ocr_timeout_seconds
 
 
 @lru_cache

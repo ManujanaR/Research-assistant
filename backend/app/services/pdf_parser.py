@@ -1,10 +1,17 @@
+import concurrent.futures
 import logging
+import os
 import re
+import tempfile
+import time
 from collections import Counter
 from typing import Any
 
+import ocrmypdf
 import pymupdf
 from pydantic import BaseModel, Field
+
+from app.core.config import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +42,7 @@ class ParsedDocument(BaseModel):
 
     page_count: int = Field(..., ge=0)
     chunks: list[dict[str, Any]]
+    ocr_used: bool = False
 
 
 def _clean_glyphs(text: str) -> str:
@@ -128,13 +136,114 @@ def parse_pdf(pdf_bytes: bytes) -> ParsedDocument:
             lines = [line.strip() for line in cleaned_text.splitlines() if line.strip()]
             raw_pages_lines.append(lines)
 
+        ocr_used = False
         if total_extracted_len == 0:
-            logger.info(
-                "PDF contains 0 extractable text characters across %d pages", page_count
-            )
-            raise NoExtractableTextError(
-                "The uploaded PDF contains no extractable text. Scanned documents or image-only PDFs are not supported."
-            )
+            settings = get_settings()
+            if not settings.ocr_enabled:
+                logger.info(
+                    "PDF contains 0 extractable text characters across %d pages (OCR disabled)",
+                    page_count,
+                )
+                raise NoExtractableTextError(
+                    "The uploaded PDF contains no extractable text. Scanned documents or image-only PDFs are not supported."
+                )
+
+            # Document has no text on any page; run OCR and re-extract text
+            temp_input_path = None
+            temp_output_path = None
+            start_ocr_time = time.monotonic()
+            try:
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as f_in:
+                    temp_input_path = f_in.name
+                    f_in.write(pdf_bytes)
+                    f_in.flush()
+
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as f_out:
+                    temp_output_path = f_out.name
+
+                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                    future = executor.submit(
+                        ocrmypdf.ocr,
+                        temp_input_path,
+                        temp_output_path,
+                        skip_text=True,
+                        language="eng",
+                        output_type="pdf",
+                    )
+                    future.result(timeout=settings.ocr_timeout_seconds)
+
+                duration = time.monotonic() - start_ocr_time
+
+                if (
+                    not os.path.exists(temp_output_path)
+                    or os.path.getsize(temp_output_path) == 0
+                ):
+                    raise NoExtractableTextError(
+                        "The uploaded PDF contains no extractable text. Scanned documents or image-only PDFs are not supported."
+                    )
+
+                with open(temp_output_path, "rb") as f_ocr:
+                    ocr_pdf_bytes = f_ocr.read()
+
+                # Re-extract text from OCR result
+                doc.close()
+                doc = pymupdf.open(stream=ocr_pdf_bytes, filetype="pdf")
+                page_count = doc.page_count
+                if page_count == 0:
+                    raise NoExtractableTextError(
+                        "The uploaded PDF contains no extractable text. Scanned documents or image-only PDFs are not supported."
+                    )
+
+                raw_pages_lines = []
+                total_extracted_len = 0
+                for page_index in range(page_count):
+                    page = doc.load_page(page_index)
+                    raw_text = page.get_text()
+                    total_extracted_len += len(raw_text.strip())
+                    cleaned_text = _clean_glyphs(raw_text)
+                    lines = [
+                        line.strip()
+                        for line in cleaned_text.splitlines()
+                        if line.strip()
+                    ]
+                    raw_pages_lines.append(lines)
+
+                logger.info(
+                    "OCR completed in %.2fs. Page count: %d, character count: %d",
+                    duration,
+                    page_count,
+                    total_extracted_len,
+                )
+
+                if total_extracted_len == 0:
+                    raise NoExtractableTextError(
+                        "The uploaded PDF contains no extractable text. Scanned documents or image-only PDFs are not supported."
+                    )
+
+                ocr_used = True
+            except NoExtractableTextError:
+                raise
+            except Exception as exc:
+                duration = time.monotonic() - start_ocr_time
+                logger.warning(
+                    "OCR processing failed or timed out after %.2fs (%s)",
+                    duration,
+                    type(exc).__name__,
+                )
+                raise NoExtractableTextError(
+                    "The uploaded PDF contains no extractable text. Scanned documents or image-only PDFs are not supported."
+                ) from exc
+            finally:
+                if temp_input_path and os.path.exists(temp_input_path):
+                    try:
+                        os.unlink(temp_input_path)
+                    except OSError:
+                        pass
+                if temp_output_path and os.path.exists(temp_output_path):
+                    try:
+                        os.unlink(temp_output_path)
+                    except OSError:
+                        pass
 
         # Detect repeated running headers and footers across pages
         repeated_headers_footers: set[str] = set()
@@ -181,6 +290,8 @@ def parse_pdf(pdf_bytes: bytes) -> ParsedDocument:
                 "The uploaded PDF contains no extractable text. Scanned documents or image-only PDFs are not supported."
             )
 
-        return ParsedDocument(page_count=page_count, chunks=all_chunks)
+        return ParsedDocument(
+            page_count=page_count, chunks=all_chunks, ocr_used=ocr_used
+        )
     finally:
         doc.close()

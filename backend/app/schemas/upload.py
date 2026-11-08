@@ -13,3 +13,6 @@ class UploadResponse(BaseModel):
     )
     page_count: int = Field(default=0, description="Total number of pages parsed.")
     chunk_count: int = Field(default=0, description="Total number of chunks indexed.")
+    ocr_used: bool = Field(
+        default=False, description="Whether OCR was used to extract text."
+    )
