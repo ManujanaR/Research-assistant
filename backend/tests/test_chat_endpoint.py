@@ -77,9 +77,23 @@ class FakeChatCompletions:
     async def create(self, **kwargs: Any) -> Any:
         self.call_count += 1
         self.last_messages = kwargs.get("messages", [])
-        if callable(self._stream_factory):
-            return self._stream_factory(**kwargs)
-        return self._stream_factory
+        if kwargs.get("stream"):
+            if callable(self._stream_factory):
+                return self._stream_factory(**kwargs)
+            return self._stream_factory
+        return type(
+            "FakeCompletion",
+            (),
+            {
+                "choices": [
+                    type(
+                        "FakeChoice",
+                        (),
+                        {"message": type("FakeMessage", (), {"content": ""})()},
+                    )()
+                ]
+            },
+        )()
 
 
 class FakeChatClient:

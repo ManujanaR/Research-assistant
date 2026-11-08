@@ -24,9 +24,11 @@ from app.services.qa import (
     assemble_chat_messages,
     collection_exists,
     extract_sources,
+    is_greeting_or_smalltalk,
     retrieve,
     stream_chat_response,
 )
+from app.services.query_rewriter import rewrite_query
 
 logger = logging.getLogger(__name__)
 
@@ -56,10 +58,34 @@ async def chat(
             detail="Document not found. Upload the PDF first.",
         )
 
+    # Greeting and small-talk routing: no rewrite calls and no retrieval calls
+    if is_greeting_or_smalltalk(request.message):
+        messages = assemble_chat_messages(
+            question=request.message,
+            history=request.history,
+            chunks=[],
+        )
+        return StreamingResponse(
+            stream_chat_response(
+                messages=messages,
+                sources=[],
+                client=llm_client,
+                question=request.message,
+            ),
+            media_type="text/event-stream",
+        )
+
+    # For grounded questions: rewrite the query, retrieve with rewritten query
+    rewritten_query = await rewrite_query(
+        question=request.message,
+        history=request.history,
+        client=llm_client,
+    )
+
     try:
         chunks = await retrieve(
             doc_hash=request.doc_hash,
-            query=request.message,
+            query=rewritten_query,
             embed_fn=embed_fn,
             top_k=5,
             client=chroma_client,
@@ -110,12 +136,12 @@ async def chat(
     relevant_chunks = [
         c for c in chunks if c.distance <= settings.citation_max_distance
     ]
-    sorted_relevant = sorted(relevant_chunks, key=lambda c: c.distance)
+    sorted_relevant = sorted(relevant_chunks, key=lambda c: c.distance)[:3]
     sources = extract_sources(sorted_relevant, question=request.message, max_sources=3)
     messages = assemble_chat_messages(
         question=request.message,
         history=request.history,
-        chunks=relevant_chunks,
+        chunks=sorted_relevant,
     )
 
     return StreamingResponse(

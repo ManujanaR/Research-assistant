@@ -46,6 +46,8 @@ class Settings(BaseSettings):
         default="https://api.openai.com/v1", alias="OPENAI_BASE_URL"
     )
     model_name: str = Field(default="gpt-4o", alias="MODEL_NAME")
+    rewrite_model: str = Field(default="gpt-4o-mini", alias="REWRITE_MODEL")
+    rewrite_history_turns: int = Field(default=3, alias="REWRITE_HISTORY_TURNS")
     embedding_model: str = Field(
         default="text-embedding-3-small", alias="EMBEDDING_MODEL"
     )
@@ -87,6 +89,14 @@ class Settings(BaseSettings):
         return [
             origin.strip() for origin in self.cors_origins.split(",") if origin.strip()
         ]
+
+    @property
+    def REWRITE_MODEL(self) -> str:
+        return self.rewrite_model
+
+    @property
+    def REWRITE_HISTORY_TURNS(self) -> int:
+        return self.rewrite_history_turns
 
 
 @lru_cache
