@@ -29,6 +29,9 @@ Extras are welcome but must not compromise the core. Do not start extras until t
 /
 ├── AGENTS.md
 ├── README.md
+├── docs/
+│   ├── SPEC.md                # Detailed application specification
+│   └── DESIGN.md              # Architectural & UI design decisions
 ├── backend/
 │   ├── app/
 │   │   ├── main.py            # FastAPI app, router registration, CORS

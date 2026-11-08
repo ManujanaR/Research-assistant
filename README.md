@@ -143,8 +143,10 @@ sequenceDiagram
 ```
 /
 ├── AGENTS.md                  # Development instructions & constraints
-├── SPEC.md                    # Detailed application specification
 ├── README.md                  # Project documentation
+├── docs/
+│   ├── SPEC.md                # Detailed application specification
+│   └── DESIGN.md              # Architectural & UI design decisions
 ├── backend/
 │   ├── app/
 │   │   ├── main.py            # FastAPI entry point & CORS configuration
