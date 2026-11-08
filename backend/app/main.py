@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.auth import router as auth_router
 from app.api.chat import router as chat_router
+from app.api.export import router as export_router
 from app.api.summary import router as summary_router
 from app.api.upload import router as upload_router
 from app.core.config import get_settings
@@ -45,6 +46,7 @@ app.include_router(auth_router)
 app.include_router(upload_router)
 app.include_router(summary_router)
 app.include_router(chat_router)
+app.include_router(export_router)
 
 
 @app.get("/health")
