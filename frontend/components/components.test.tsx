@@ -301,7 +301,7 @@ describe("Frontend UI Components", () => {
   });
 
   describe("SourceCard", () => {
-    it("shows page badge with page number when page_number is not null", () => {
+    it("shows page badge with page number only when expanded", () => {
       render(
         <SourceCard
           source={{
@@ -311,15 +311,24 @@ describe("Frontend UI Components", () => {
         />
       );
 
+      // Collapsed initially
+      expect(screen.queryByTestId("page-badge")).toBeNull();
+      expect(screen.queryByText(/Snippet text on page 2/)).toBeNull();
+
+      const toggleButton = screen.getByRole("button", { name: /show passage/i });
+      fireEvent.click(toggleButton);
+
       const badge = screen.getByTestId("page-badge");
       expect(badge.textContent).toBe("Page 2");
-      expect(badge.textContent).not.toContain("null");
-      expect(badge.textContent).not.toContain("undefined");
+      expect(screen.getByTestId("source-snippet").textContent).toBe(
+        "Snippet text on page 2"
+      );
     });
 
     it("shows no badge and no text containing null or undefined when page_number is null", () => {
       const { container } = render(
         <SourceCard
+          initiallyExpanded={true}
           source={{
             page_number: null,
             snippet: "Excerpt without explicit page number",
@@ -331,9 +340,12 @@ describe("Frontend UI Components", () => {
       expect(container.textContent).not.toContain("null");
       expect(container.textContent).not.toContain("undefined");
       expect(container.textContent).not.toContain("Page");
+      expect(screen.getByTestId("source-snippet").textContent).toBe(
+        "Excerpt without explicit page number"
+      );
     });
 
-    it("snippet is hidden until expand button is pressed, and aria-expanded flips", () => {
+    it("passage is hidden until expand button is pressed, and aria-expanded flips", () => {
       const snippetText = "This is a detailed excerpt from the paper.";
       render(
         <SourceCard
@@ -344,7 +356,7 @@ describe("Frontend UI Components", () => {
         />
       );
 
-      const toggleButton = screen.getByRole("button", { name: /show snippet/i });
+      const toggleButton = screen.getByRole("button", { name: /show passage/i });
       expect(toggleButton.getAttribute("aria-expanded")).toBe("false");
       expect(screen.queryByTestId("source-snippet")).toBeNull();
 
@@ -464,7 +476,7 @@ describe("Frontend UI Components", () => {
       expect(screen.getByTestId("chat-empty-state")).toBeDefined();
     });
 
-    it("sending a message with mocked streamChat renders assistant text and source card", async () => {
+    it("a grounded answer shows a collapsed 'Sources (N)' line, and expanding it shows the page and passage", async () => {
       vi.mocked(streamChat).mockImplementation(async (_params, handlers) => {
         handlers.onToken("The core approach ");
         handlers.onToken("uses self-attention.");
@@ -491,14 +503,31 @@ describe("Frontend UI Components", () => {
         expect(
           screen.getByText("The core approach uses self-attention.")
         ).toBeDefined();
-        expect(screen.getByTestId("message-sources")).toBeDefined();
-        expect(screen.getByText("Page 4")).toBeDefined();
       });
+
+      // Shows collapsed "Sources (1)" line by default
+      const toggleButton = screen.getByRole("button", { name: "Sources (1)" });
+      expect(toggleButton).toBeDefined();
+      expect(toggleButton.getAttribute("aria-expanded")).toBe("false");
+      expect(screen.queryByTestId("message-sources")).toBeNull();
+      expect(screen.queryByText("Page 4")).toBeNull();
+      expect(
+        screen.queryByText("Transformer models rely on self-attention.")
+      ).toBeNull();
+
+      // Expanding the toggle sets aria-expanded to true and shows page and passage
+      fireEvent.click(toggleButton);
+      expect(toggleButton.getAttribute("aria-expanded")).toBe("true");
+      expect(screen.getByTestId("message-sources")).toBeDefined();
+      expect(screen.getByText("Page 4")).toBeDefined();
+      expect(
+        screen.getByText("Transformer models rely on self-attention.")
+      ).toBeDefined();
 
       expect(streamChat).toHaveBeenCalledTimes(1);
     });
 
-    it("a chat answer with two sources shows markers [1] and [2], and clicking [2] shows its passage with its page number", async () => {
+    it("a chat answer with two sources shows collapsed Sources (2), and expanding it shows page numbers and passages", async () => {
       vi.mocked(streamChat).mockImplementation(async (_params, handlers) => {
         handlers.onToken("Multi-head attention improves capacity.");
         handlers.onSources([
@@ -519,29 +548,35 @@ describe("Frontend UI Components", () => {
       fireEvent.click(sendButton);
 
       await waitFor(() => {
-        expect(screen.getByRole("button", { name: "Citation [1]" })).toBeDefined();
-        expect(screen.getByRole("button", { name: "Citation [2]" })).toBeDefined();
-      });
-
-      // Source 2 passage is initially not expanded
-      expect(
-        screen.queryByText(/Multi-head attention yields significant gains on translation./)
-      ).toBeNull();
-
-      // Click citation marker [2]
-      const marker2 = screen.getByRole("button", { name: "Citation [2]" });
-      fireEvent.click(marker2);
-
-      // Verifies passage appears with its page number
-      await waitFor(() => {
-        expect(screen.getByText("Passage from Page 5:")).toBeDefined();
         expect(
-          screen.getByText("Multi-head attention yields significant gains on translation.")
+          screen.getByText("Multi-head attention improves capacity.")
         ).toBeDefined();
       });
+
+      // No inline citation buttons like [1] or [2]
+      expect(screen.queryByRole("button", { name: "Citation [1]" })).toBeNull();
+      expect(screen.queryByRole("button", { name: "Citation [2]" })).toBeNull();
+
+      // Collapsed Sources (2) line
+      const toggle = screen.getByRole("button", { name: "Sources (2)" });
+      expect(toggle.getAttribute("aria-expanded")).toBe("false");
+      expect(screen.queryByTestId("message-sources")).toBeNull();
+
+      // Expand toggle sets aria-expanded to true and reveals sources
+      fireEvent.click(toggle);
+      expect(toggle.getAttribute("aria-expanded")).toBe("true");
+      expect(screen.getByTestId("message-sources")).toBeDefined();
+      expect(screen.getByText("Page 3")).toBeDefined();
+      expect(
+        screen.getByText("Self-attention operates across representation subspaces.")
+      ).toBeDefined();
+      expect(screen.getByText("Page 5")).toBeDefined();
+      expect(
+        screen.getByText("Multi-head attention yields significant gains on translation.")
+      ).toBeDefined();
     });
 
-    it("a message with no sources shows no markers", async () => {
+    it("an answer with no sources shows no citation line", async () => {
       vi.mocked(streamChat).mockImplementation(async (_params, handlers) => {
         handlers.onToken("I cannot answer this from the text.");
         handlers.onSources([]);
@@ -564,7 +599,9 @@ describe("Frontend UI Components", () => {
         ).toBeDefined();
       });
 
-      expect(screen.queryByRole("button", { name: /Citation \[/i })).toBeNull();
+      expect(screen.queryByRole("button", { name: /sources/i })).toBeNull();
+      expect(screen.queryByRole("button", { name: /citation/i })).toBeNull();
+      expect(screen.queryByTestId("citation-block")).toBeNull();
       expect(screen.queryByTestId("message-sources")).toBeNull();
     });
 

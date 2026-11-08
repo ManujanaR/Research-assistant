@@ -10,10 +10,10 @@ import {
   Loader2,
   ChevronDown,
   ChevronUp,
-  BookOpen,
   Sparkles,
 } from "lucide-react";
 import { ChatMessage, ChatSource, streamChat } from "@/lib/api";
+import { SourceCard } from "./SourceCard";
 
 export interface ChatPanelProps {
   docHash: string;
@@ -29,9 +29,9 @@ export function ChatPanel({ docHash }: ChatPanelProps) {
   const [input, setInput] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // Track expanded source index per message: msgId -> Record<sourceIdx, boolean>
-  const [expandedSources, setExpandedSources] = useState<
-    Record<string, Record<number, boolean>>
+  // Track expanded citation block per message: msgId -> boolean
+  const [expandedCitationBlocks, setExpandedCitationBlocks] = useState<
+    Record<string, boolean>
   >({});
 
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -43,17 +43,11 @@ export function ChatPanel({ docHash }: ChatPanelProps) {
     }
   };
 
-  const toggleSource = (msgId: string, sourceIdx: number) => {
-    setExpandedSources((prev) => {
-      const msgState = prev[msgId] || {};
-      return {
-        ...prev,
-        [msgId]: {
-          ...msgState,
-          [sourceIdx]: !msgState[sourceIdx],
-        },
-      };
-    });
+  const toggleCitationBlock = (msgId: string) => {
+    setExpandedCitationBlocks((prev) => ({
+      ...prev,
+      [msgId]: !prev[msgId],
+    }));
   };
 
   const handleStop = () => {
@@ -201,7 +195,7 @@ export function ChatPanel({ docHash }: ChatPanelProps) {
               msg.role === "assistant" &&
               Boolean(msg.sources && msg.sources.length > 0);
             const msgSources = msg.sources || [];
-            const msgExpState = expandedSources[msg.id] || {};
+            const isBlockExpanded = Boolean(expandedCitationBlocks[msg.id]);
 
             return (
               <div
@@ -229,112 +223,44 @@ export function ChatPanel({ docHash }: ChatPanelProps) {
                       {msg.content ||
                         (isStreaming && msg.role === "assistant" ? "..." : "")}
                     </span>
-
-                    {/* Numbered Inline Citation Markers */}
-                    {hasSources && (
-                      <span className="inline-flex flex-wrap items-center gap-1 ml-1.5 align-baseline">
-                        {msgSources.map((_, idx) => {
-                          const num = idx + 1;
-                          const isExpanded = Boolean(msgExpState[idx]);
-                          return (
-                            <button
-                              key={idx}
-                              type="button"
-                              onClick={() => toggleSource(msg.id, idx)}
-                              aria-label={`Citation [${num}]`}
-                              aria-expanded={isExpanded}
-                              className={`inline-flex items-center justify-center px-1.5 py-0.2 text-[11px] font-bold rounded transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-accent-blue ${
-                                isExpanded
-                                  ? "bg-blue-600 text-white dark:bg-accent-blue dark:text-black"
-                                  : "bg-surface-pill text-blue-700 dark:text-accent-blue hover:bg-surface-pill-hover border border-border-subtle"
-                              }`}
-                            >
-                              [{num}]
-                            </button>
-                          );
-                        })}
-                      </span>
-                    )}
                   </div>
                 </div>
 
-                {/* Numbered Sources List beneath the message */}
+                {/* Citation block beneath the message */}
                 {hasSources && (
                   <div
-                    data-testid="message-sources"
-                    className="w-full max-w-[85%] mt-1 space-y-2 pl-3 sm:pl-4"
+                    data-testid="citation-block"
+                    className="w-full max-w-[85%] mt-1 pl-3 sm:pl-4"
                   >
-                    <p className="text-[11px] font-semibold text-text-secondary uppercase tracking-wider">
-                      Citations ({msgSources.length})
-                    </p>
-                    {msgSources.map((source, idx) => {
-                      const num = idx + 1;
-                      const isExpanded = Boolean(msgExpState[idx]);
-                      return (
-                        <div
-                          key={idx}
-                          data-testid={`source-card-${num}`}
-                          className="border border-border-subtle rounded-xl p-2.5 bg-surface-panel text-xs shadow-sm transition-colors"
-                        >
-                          <div className="flex items-center justify-between gap-2">
-                            <div className="flex items-center gap-2">
-                              <button
-                                type="button"
-                                onClick={() => toggleSource(msg.id, idx)}
-                                aria-expanded={isExpanded}
-                                aria-label={`Toggle source [${num}]`}
-                                className="font-bold text-blue-600 dark:text-accent-blue hover:underline focus:outline-none focus-visible:ring-1 focus-visible:ring-accent-blue rounded"
-                              >
-                                [{num}]
-                              </button>
-                              <BookOpen className="w-3.5 h-3.5 text-text-muted" />
-                              <span className="font-medium text-text-primary">
-                                Source
-                              </span>
-                              {source.page_number !== null && (
-                                <span
-                                  data-testid="page-badge"
-                                  className="px-2 py-0.5 text-[10px] font-semibold bg-surface-pill text-blue-700 dark:text-accent-blue border border-border-subtle rounded-full"
-                                >
-                                  Page {source.page_number}
-                                </span>
-                              )}
-                            </div>
+                    <button
+                      type="button"
+                      onClick={() => toggleCitationBlock(msg.id)}
+                      aria-expanded={isBlockExpanded}
+                      className="flex items-center gap-1.5 text-xs font-semibold text-text-secondary hover:text-text-primary transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-accent-blue rounded py-1 px-1.5"
+                    >
+                      <span>Sources ({msgSources.length})</span>
+                      {isBlockExpanded ? (
+                        <ChevronUp className="w-3.5 h-3.5" />
+                      ) : (
+                        <ChevronDown className="w-3.5 h-3.5" />
+                      )}
+                    </button>
 
-                            <button
-                              type="button"
-                              onClick={() => toggleSource(msg.id, idx)}
-                              aria-expanded={isExpanded}
-                              className="flex items-center gap-1 text-text-secondary hover:text-text-primary font-medium transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-accent-blue rounded p-1"
-                            >
-                              <span>
-                                {isExpanded ? "Hide passage" : "Show passage"}
-                              </span>
-                              {isExpanded ? (
-                                <ChevronUp className="w-3.5 h-3.5" />
-                              ) : (
-                                <ChevronDown className="w-3.5 h-3.5" />
-                              )}
-                            </button>
-                          </div>
-
-                          {/* Expanded Passage */}
-                          {isExpanded && (
-                            <div
-                              data-testid="source-passage"
-                              className="mt-2.5 pl-3 py-1.5 border-l-2 border-blue-600 dark:border-accent-blue bg-surface-elevated text-text-secondary whitespace-pre-wrap leading-relaxed text-xs rounded-r"
-                            >
-                              <div className="text-[10px] font-semibold text-text-muted mb-1">
-                                {source.page_number !== null
-                                  ? `Passage from Page ${source.page_number}:`
-                                  : "Passage:"}
-                              </div>
-                              {source.snippet}
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
+                    {isBlockExpanded && (
+                      <div
+                        data-testid="message-sources"
+                        className="mt-2 space-y-2"
+                      >
+                        {msgSources.map((source, idx) => (
+                          <SourceCard
+                            key={idx}
+                            source={source}
+                            index={idx}
+                            initiallyExpanded={true}
+                          />
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
