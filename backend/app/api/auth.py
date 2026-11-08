@@ -10,11 +10,20 @@ from app.core.config import get_settings
 from app.core.dependencies import get_current_user
 from app.db.session import get_db
 from app.models.user import User
-from app.schemas.auth import SignInRequest, SignUpRequest, UserResponse
+from app.schemas.auth import (
+    ChangePasswordRequest,
+    ProfileResponse,
+    SignInRequest,
+    SignUpRequest,
+    UpdateProfileRequest,
+    UserResponse,
+)
 from app.services.auth_service import (
     authenticate_user,
+    change_password,
     create_user,
     get_user_by_email,
+    update_display_name,
 )
 from app.services.rate_limiter import login_rate_limiter
 from app.services.token_service import create_access_token
@@ -85,7 +94,10 @@ async def signin(
     login_rate_limiter.reset(limiter_keys)
 
     settings = get_settings()
-    token = create_access_token(user_id=user.id)
+    token = create_access_token(
+        user_id=user.id,
+        token_version=user.token_version,
+    )
     is_production = settings.environment.lower() == "production"
 
     response.set_cookie(
@@ -132,4 +144,94 @@ async def signout(
         samesite="lax",
         secure=is_production,
     )
+    return {"status": "ok"}
+
+
+@router.get(
+    "/profile",
+    response_model=ProfileResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Get profile of signed-in user",
+)
+async def get_profile(
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> ProfileResponse:
+    """Return profile including display name for user authenticated via session cookie."""
+    return ProfileResponse(
+        id=current_user.id,
+        email=current_user.email,
+        display_name=current_user.display_name,
+    )
+
+
+@router.patch(
+    "/profile",
+    response_model=ProfileResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Update display name for signed-in user",
+)
+async def update_profile(
+    request: UpdateProfileRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> ProfileResponse:
+    """Update user display name with trimming and rule enforcement."""
+    updated_user = update_display_name(current_user, request.display_name, db=db)
+    return ProfileResponse(
+        id=updated_user.id,
+        email=updated_user.email,
+        display_name=updated_user.display_name,
+    )
+
+
+@router.post(
+    "/change-password",
+    status_code=status.HTTP_200_OK,
+    summary="Change password and revoke other sessions",
+)
+async def change_password_endpoint(
+    request: ChangePasswordRequest,
+    response: Response,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> dict[str, str]:
+    """Change password, increment token_version, and reissue caller session cookie."""
+    limiter_key = f"user:{current_user.id}:change_password"
+    if login_rate_limiter.is_rate_limited(limiter_key):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many attempts. Try again in a few minutes.",
+        )
+
+    try:
+        change_password(
+            current_user,
+            current_password=request.current_password,
+            new_password=request.new_password,
+            db=db,
+        )
+    except HTTPException as exc:
+        if exc.status_code == status.HTTP_401_UNAUTHORIZED:
+            login_rate_limiter.record_failure([limiter_key])
+        raise
+
+    login_rate_limiter.reset([limiter_key])
+
+    settings = get_settings()
+    token = create_access_token(
+        user_id=current_user.id,
+        token_version=current_user.token_version,
+    )
+    is_production = settings.environment.lower() == "production"
+
+    response.set_cookie(
+        key=COOKIE_NAME,
+        value=token,
+        httponly=True,
+        samesite="lax",
+        secure=is_production,
+        max_age=settings.auth_token_ttl_minutes * 60,
+        path="/",
+    )
+
     return {"status": "ok"}

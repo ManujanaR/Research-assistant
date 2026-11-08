@@ -2,6 +2,7 @@
 
 import logging
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 import jwt
 from jwt.exceptions import PyJWTError
@@ -28,10 +29,11 @@ def _get_signing_key(override_key: str | None = None) -> str:
 
 def create_access_token(
     user_id: str,
+    token_version: int = 0,
     expires_minutes: int | None = None,
     secret_key: str | None = None,
 ) -> str:
-    """Generate a signed JWT token containing the user_id in the 'sub' claim."""
+    """Generate a signed JWT token containing user_id and token_version."""
     settings = get_settings()
     key = _get_signing_key(secret_key)
     ttl = (
@@ -43,10 +45,34 @@ def create_access_token(
     expire = now + timedelta(minutes=ttl)
     payload = {
         "sub": str(user_id),
+        "token_version": int(token_version),
+        "v": int(token_version),
         "iat": now,
         "exp": expire,
     }
     return jwt.encode(payload, key, algorithm=ALGORITHM)
+
+
+def decode_access_token(
+    token: str,
+    secret_key: str | None = None,
+) -> dict[str, Any] | None:
+    """Decode and validate a JWT access token, returning its payload dict or None."""
+    if not token or not isinstance(token, str):
+        return None
+
+    try:
+        key = _get_signing_key(secret_key)
+        payload = jwt.decode(
+            token,
+            key,
+            algorithms=[ALGORITHM],
+            options={"require": ["sub", "exp"]},
+        )
+        return payload
+    except (PyJWTError, ValueError, TypeError) as exc:
+        logger.debug("Access token decoding failed: %s", type(exc).__name__)
+        return None
 
 
 def verify_access_token(
@@ -58,22 +84,10 @@ def verify_access_token(
     Rejects any token with an unexpected algorithm (e.g., 'none', asymmetric algs),
     expired signature, invalid key, or malformed structure. Never logs the full token.
     """
-    if not token or not isinstance(token, str):
+    payload = decode_access_token(token, secret_key=secret_key)
+    if not payload:
         return None
-
-    try:
-        key = _get_signing_key(secret_key)
-        # Explicitly restrict allowed algorithms to ALGORITHM (HS256)
-        payload = jwt.decode(
-            token,
-            key,
-            algorithms=[ALGORITHM],
-            options={"require": ["sub", "exp"]},
-        )
-        user_id = payload.get("sub")
-        if not user_id or not isinstance(user_id, str):
-            return None
-        return user_id
-    except (PyJWTError, ValueError, TypeError) as exc:
-        logger.debug("Access token verification failed: %s", type(exc).__name__)
+    user_id = payload.get("sub")
+    if not user_id or not isinstance(user_id, str):
         return None
+    return user_id

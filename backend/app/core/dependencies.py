@@ -12,7 +12,7 @@ from app.models.user import User
 from app.services.cache import SummaryCache
 from app.services.qa import EmbedFn
 from app.services.summary_service import InMemoryPaperTextStore, PaperTextStore
-from app.services.token_service import verify_access_token
+from app.services.token_service import decode_access_token
 
 # Process-wide shared singleton for paper text store
 _paper_text_store = InMemoryPaperTextStore()
@@ -81,7 +81,7 @@ async def get_current_user(
     request: Request,
     db: Annotated[Session, Depends(get_db)],
 ) -> User:
-    """Read auth_token from cookie, verify JWT, load user, and raise 401 on failure."""
+    """Read auth_token from cookie, verify JWT, load user, and verify token version against DB."""
     token = request.cookies.get("auth_token")
     if not token:
         raise HTTPException(
@@ -89,8 +89,15 @@ async def get_current_user(
             detail="Not authenticated",
         )
 
-    user_id = verify_access_token(token)
-    if not user_id:
+    payload = decode_access_token(token)
+    if not payload:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired authentication token",
+        )
+
+    user_id = payload.get("sub")
+    if not user_id or not isinstance(user_id, str):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired authentication token",
@@ -101,6 +108,16 @@ async def get_current_user(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="User not found",
+        )
+
+    token_version = payload.get("token_version")
+    if token_version is None:
+        token_version = payload.get("v")
+
+    if token_version is None or token_version != user.token_version:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Session has ended. Sign in again to continue.",
         )
 
     return user

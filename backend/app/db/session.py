@@ -3,7 +3,7 @@ from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import Engine, create_engine
+from sqlalchemy import Engine, create_engine, inspect, text
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from app.core.config import BACKEND_DIR, get_settings
@@ -42,10 +42,34 @@ engine = get_engine()
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
+def run_migrations(target_engine: Engine | None = None) -> None:
+    """Run lightweight schema migrations on startup to add missing columns."""
+    eng = target_engine or engine
+    with eng.connect() as conn:
+        inspector = inspect(conn)
+        table_names = inspector.get_table_names()
+        if "users" in table_names:
+            columns = {col["name"] for col in inspector.get_columns("users")}
+            if "display_name" not in columns:
+                conn.execute(
+                    text("ALTER TABLE users ADD COLUMN display_name VARCHAR(60)")
+                )
+                logger.info("Migrated: added display_name column to users table.")
+            if "token_version" not in columns:
+                conn.execute(
+                    text(
+                        "ALTER TABLE users ADD COLUMN token_version INTEGER NOT NULL DEFAULT 0"
+                    )
+                )
+                logger.info("Migrated: added token_version column to users table.")
+            conn.commit()
+
+
 def init_db(target_engine: Engine | None = None) -> None:
-    """Create all database tables on the specified or default engine."""
+    """Create all database tables on the specified or default engine and run migrations."""
     eng = target_engine or engine
     Base.metadata.create_all(bind=eng)
+    run_migrations(eng)
     logger.info("Database tables initialized successfully.")
 
 
