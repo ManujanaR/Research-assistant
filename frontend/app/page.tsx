@@ -4,6 +4,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { BookOpen, MessageSquare, Sparkles } from "lucide-react";
 import { AuthPanel } from "@/components/AuthPanel";
 import { SignOutButton } from "@/components/SignOutButton";
+import { ProfileMenu } from "@/components/ProfileMenu";
 import { SourcePanel } from "@/components/SourcePanel";
 import { StudioPanel } from "@/components/StudioPanel";
 import { ChatPanel } from "@/components/ChatPanel";
@@ -15,6 +16,7 @@ import {
   UploadResponse,
   UserResponse,
   getMe,
+  getProfile,
   getSummary,
 } from "@/lib/api";
 
@@ -78,8 +80,17 @@ export default function Home() {
     async function checkSession() {
       try {
         const user = await getMe();
+        let fullUser: UserResponse = user;
+        try {
+          const profile = await getProfile();
+          if (profile && profile.id) {
+            fullUser = profile;
+          }
+        } catch {
+          // Fall back to getMe user
+        }
         if (isMounted) {
-          setCurrentUser(user);
+          setCurrentUser(fullUser);
         }
       } catch {
         if (isMounted) {
@@ -190,6 +201,12 @@ export default function Home() {
   return (
     <div className="w-full h-full flex flex-col flex-1 min-h-0 overflow-hidden bg-bg-base text-text-primary transition-colors duration-150">
       <SignOutButton email={currentUser.email} onSignOut={handleSignOut} />
+
+      <ProfileMenu
+        user={currentUser}
+        onUserUpdate={(updated) => setCurrentUser(updated)}
+        onSignOut={handleSignOut}
+      />
 
       <ExportButton
         docHash={summary ? uploadResult?.doc_hash : null}

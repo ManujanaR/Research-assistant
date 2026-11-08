@@ -29,6 +29,13 @@ export interface ChatSource {
 export interface UserResponse {
   id: string;
   email: string;
+  display_name?: string | null;
+}
+
+export interface ProfileResponse {
+  id: string;
+  email: string;
+  display_name: string | null;
 }
 
 export interface ExportSource {
@@ -225,6 +232,81 @@ export async function getMe(): Promise<UserResponse> {
   }
 
   return (await response.json()) as UserResponse;
+}
+
+export async function getProfile(): Promise<ProfileResponse> {
+  let response: Response;
+  try {
+    response = await fetch(`${BASE_URL}/api/auth/profile`, {
+      method: "GET",
+      headers: {
+        Accept: "application/json",
+      },
+      credentials: "include",
+    });
+  } catch (err) {
+    throw new ApiError(0, err instanceof Error ? err.message : "Network error");
+  }
+
+  if (!response.ok) {
+    throw await parseErrorResponse(response);
+  }
+
+  return (await response.json()) as ProfileResponse;
+}
+
+export async function updateProfile(
+  displayName: string | null
+): Promise<ProfileResponse> {
+  let response: Response;
+  try {
+    response = await fetch(`${BASE_URL}/api/auth/profile`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      credentials: "include",
+      body: JSON.stringify({ display_name: displayName }),
+    });
+  } catch (err) {
+    throw new ApiError(0, err instanceof Error ? err.message : "Network error");
+  }
+
+  if (!response.ok) {
+    throw await parseErrorResponse(response);
+  }
+
+  return (await response.json()) as ProfileResponse;
+}
+
+export async function changePassword(
+  currentPassword: string,
+  newPassword: string
+): Promise<{ status: string }> {
+  let response: Response;
+  try {
+    response = await fetch(`${BASE_URL}/api/auth/change-password`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      credentials: "include",
+      body: JSON.stringify({
+        current_password: currentPassword,
+        new_password: newPassword,
+      }),
+    });
+  } catch (err) {
+    throw new ApiError(0, err instanceof Error ? err.message : "Network error");
+  }
+
+  if (!response.ok) {
+    throw await parseErrorResponse(response);
+  }
+
+  return (await response.json()) as { status: string };
 }
 
 export async function uploadPdf(file: File): Promise<UploadResponse> {

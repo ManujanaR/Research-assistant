@@ -20,6 +20,9 @@ import { ThemeToggle } from "./ThemeToggle";
 import { AuthPanel } from "./AuthPanel";
 import { SignOutButton } from "./SignOutButton";
 import { ConvertLink } from "./ConvertLink";
+import { ProfileMenu } from "./ProfileMenu";
+import { ProfileForm } from "./ProfileForm";
+import { ChangePasswordForm } from "./ChangePasswordForm";
 import Home from "@/app/page";
 import {
   ApiError,
@@ -27,6 +30,9 @@ import {
   getSummary,
   streamChat,
   getMe,
+  getProfile,
+  updateProfile,
+  changePassword,
   signIn,
   signUp,
   signOut,
@@ -42,6 +48,9 @@ vi.mock("@/lib/api", async () => {
     getSummary: vi.fn(),
     streamChat: vi.fn(),
     getMe: vi.fn(),
+    getProfile: vi.fn(),
+    updateProfile: vi.fn(),
+    changePassword: vi.fn(),
     signIn: vi.fn(),
     signUp: vi.fn(),
     signOut: vi.fn(),
@@ -1106,6 +1115,171 @@ describe("Frontend UI Components", () => {
         expect(screen.getByTestId("auth-page")).toBeDefined();
       });
       expect(screen.queryByTestId("desktop-workspace")).toBeNull();
+    });
+  });
+
+  describe("Profile and Password Change", () => {
+    it("initials come from the name when set, otherwise from the email", async () => {
+      // 1. When display_name is set
+      const { unmount } = render(
+        <ProfileMenu
+          user={{
+            id: "user-1",
+            email: "ada@example.com",
+            display_name: "Ada Lovelace",
+          }}
+        />
+      );
+
+      const avatar = screen.getByTestId("profile-avatar");
+      await waitFor(() => {
+        expect(avatar.textContent).toBe("AL");
+      });
+      unmount();
+
+      // 2. When display_name is null/unset
+      render(
+        <ProfileMenu
+          user={{
+            id: "user-2",
+            email: "grace@example.com",
+            display_name: null,
+          }}
+        />
+      );
+
+      const avatarEmail = screen.getByTestId("profile-avatar");
+      await waitFor(() => {
+        expect(avatarEmail.textContent).toBe("GR");
+      });
+    });
+
+    it("saving trims and calls the API once", async () => {
+      const onSaveMock = vi.fn().mockResolvedValue(undefined);
+      render(<ProfileForm initialDisplayName="" onSave={onSaveMock} />);
+
+      const input = screen.getByTestId("profile-name-input");
+      fireEvent.change(input, { target: { value: "   Grace Hopper   " } });
+
+      const saveBtn = screen.getByTestId("profile-save-btn");
+      fireEvent.click(saveBtn);
+
+      await waitFor(() => {
+        expect(onSaveMock).toHaveBeenCalledTimes(1);
+        expect(onSaveMock).toHaveBeenCalledWith("Grace Hopper");
+      });
+    });
+
+    it("a name over 60 characters shows its error without calling the API", async () => {
+      const onSaveMock = vi.fn();
+      render(<ProfileForm initialDisplayName="" onSave={onSaveMock} />);
+
+      const input = screen.getByTestId("profile-name-input");
+      const longName = "a".repeat(61);
+      fireEvent.change(input, { target: { value: longName } });
+
+      const saveBtn = screen.getByTestId("profile-save-btn");
+      fireEvent.click(saveBtn);
+
+      expect(onSaveMock).not.toHaveBeenCalled();
+      const errorMsg = await screen.findByTestId("profile-form-error");
+      expect(errorMsg.textContent).toBe(
+        "Display name must be 60 characters or fewer."
+      );
+    });
+
+    it("the menu opens, closes on Escape, and returns focus", async () => {
+      render(
+        <ProfileMenu
+          user={{
+            id: "user-1",
+            email: "test@example.com",
+            display_name: "Test User",
+          }}
+        />
+      );
+
+      const avatar = screen.getByTestId("profile-avatar");
+      expect(screen.queryByRole("menu")).toBeNull();
+
+      // Open menu
+      fireEvent.click(avatar);
+      const menu = await screen.findByRole("menu");
+      expect(menu).toBeDefined();
+      expect(screen.getByTestId("menu-item-edit-profile")).toBeDefined();
+      expect(screen.getByTestId("menu-item-change-password")).toBeDefined();
+      expect(screen.getByTestId("menu-item-sign-out")).toBeDefined();
+
+      // Press Escape to close
+      fireEvent.keyDown(menu, { key: "Escape" });
+      expect(screen.queryByRole("menu")).toBeNull();
+      expect(document.activeElement).toBe(avatar);
+    });
+
+    it("mismatched new passwords show their error without calling the API", async () => {
+      render(<ChangePasswordForm />);
+
+      fireEvent.change(screen.getByTestId("current-password-input"), {
+        target: { value: "oldpassword123" },
+      });
+      fireEvent.change(screen.getByTestId("new-password-input"), {
+        target: { value: "newpassword456" },
+      });
+      fireEvent.change(screen.getByTestId("confirm-password-input"), {
+        target: { value: "mismatchpassword" },
+      });
+
+      fireEvent.click(screen.getByTestId("change-password-submit-btn"));
+
+      expect(changePassword).not.toHaveBeenCalled();
+      const errorMsg = await screen.findByTestId("confirm-password-error");
+      expect(errorMsg.textContent).toBe("Passwords do not match.");
+    });
+
+    it("a 401 shows “Current password is incorrect.”", async () => {
+      vi.mocked(changePassword).mockRejectedValueOnce(
+        new ApiError(401, "Current password is incorrect.")
+      );
+
+      render(<ChangePasswordForm />);
+
+      fireEvent.change(screen.getByTestId("current-password-input"), {
+        target: { value: "wrongpwd123" },
+      });
+      fireEvent.change(screen.getByTestId("new-password-input"), {
+        target: { value: "newpassword456" },
+      });
+      fireEvent.change(screen.getByTestId("confirm-password-input"), {
+        target: { value: "newpassword456" },
+      });
+
+      fireEvent.click(screen.getByTestId("change-password-submit-btn"));
+
+      const errorMsg = await screen.findByTestId("current-password-error");
+      expect(errorMsg.textContent).toBe("Current password is incorrect.");
+    });
+
+    it("success shows “Password changed. Other devices have been signed out.”", async () => {
+      vi.mocked(changePassword).mockResolvedValueOnce({ status: "ok" });
+
+      render(<ChangePasswordForm />);
+
+      fireEvent.change(screen.getByTestId("current-password-input"), {
+        target: { value: "correctpwd123" },
+      });
+      fireEvent.change(screen.getByTestId("new-password-input"), {
+        target: { value: "newpassword456" },
+      });
+      fireEvent.change(screen.getByTestId("confirm-password-input"), {
+        target: { value: "newpassword456" },
+      });
+
+      fireEvent.click(screen.getByTestId("change-password-submit-btn"));
+
+      const successMsg = await screen.findByTestId("change-password-success");
+      expect(successMsg.textContent).toBe(
+        "Password changed. Other devices have been signed out."
+      );
     });
   });
 });
