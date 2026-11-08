@@ -7,9 +7,10 @@ import { SignOutButton } from "@/components/SignOutButton";
 import { SourcePanel } from "@/components/SourcePanel";
 import { StudioPanel } from "@/components/StudioPanel";
 import { ChatPanel } from "@/components/ChatPanel";
-import { PrintReport, PrintReportMessage } from "@/components/PrintReport";
+import { ExportButton } from "@/components/ExportButton";
 import {
   ApiError,
+  ExportMessage,
   SummaryResponse,
   UploadResponse,
   UserResponse,
@@ -39,7 +40,7 @@ export default function Home() {
   const [summary, setSummary] = useState<SummaryResponse | null>(null);
   const [isSummaryLoading, setIsSummaryLoading] = useState(false);
   const [summaryError, setSummaryError] = useState<string | null>(null);
-  const [messages] = useState<PrintReportMessage[]>([]);
+  const [messages] = useState<ExportMessage[]>([]);
 
   // Desktop summary panel adjustable width (default 380px, min 280px, max 700px)
   const [summaryWidth, setSummaryWidth] = useState(380);
@@ -190,10 +191,9 @@ export default function Home() {
     <div className="w-full h-full flex flex-col flex-1 min-h-0 overflow-hidden bg-bg-base text-text-primary transition-colors duration-150">
       <SignOutButton email={currentUser.email} onSignOut={handleSignOut} />
 
-      <PrintReport
-        summary={summary}
-        messages={messages}
-        filename={uploadResult?.filename}
+      <ExportButton
+        docHash={summary ? uploadResult?.doc_hash : null}
+        messages={messages.slice(-200)}
       />
 
       {/* Desktop: Three columns (hidden on phone/tablet, flex on lg and above) */}
