@@ -239,3 +239,9 @@ Errors appear inline above the button, with an icon and text. Colour is not the 
 
 - While the session is being checked, the app shows the startup screen, not the sign-in page.
 - A signed-in user who reloads the page stays signed in while the token is valid.
+
+## 4.10 Profile menu
+
+- An avatar with initials from the display name, or from the email if no name is set.
+- The menu shows the name and email, then "Edit profile", "Change password", and "Sign out".
+- Closes on Escape and outside click, returns focus to the avatar.

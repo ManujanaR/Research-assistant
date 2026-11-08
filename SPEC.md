@@ -290,6 +290,14 @@ Authentication is in scope for this project. Users sign up and sign in with an e
 - Email verification.
 - Shared documents between users.
 
+## 10. Profile
+
+A signed-in user can view and edit their display name and change their password.
+- Display name is optional, 1 to 60 characters after trimming, letters, digits, spaces, `.`, `'`, and `-`, stored as plain text, never rendered as HTML.
+- Changing the password ends other sessions through a `token_version` counter. Changing the name does not.
+- Wrong current password returns 401, "Current password is incorrect."
+- Rate-limited per user.
+
 ## 13. Export
 
 - A user can export the current paper’s summary and conversation as a Word document (.docx).
