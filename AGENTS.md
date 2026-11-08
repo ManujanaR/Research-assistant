@@ -122,9 +122,16 @@ Q&A:
 - Stream responses to the frontend.
 - When RAG is used, return the source chunks or page numbers used for each answer so the UI can show them.
 
+Credibility and reporting signals:
+- Process credibility in the background without blocking the upload or summary response.
+- External network transmission constraints:
+  * Only the extracted document Title, DOI, or arXiv identifier may be transmitted to external verification APIs (Crossref, Semantic Scholar).
+  * The document body text, extracted chunks, chat history, and user IDs must NEVER be sent to external services.
+
 ## Things to avoid
 
 - Do not send the paper to any service other than the configured LLM provider.
+- Do not transmit document body text, extracted chunks, chat history, or user IDs to external verification services (Crossref, Semantic Scholar). Only Title, DOI, or arXiv identifier may be queried.
 - Do not store uploaded PDFs permanently unless a feature needs them. Keep them in a temp directory and clean up.
 - Do not expose API keys to the frontend. All LLM calls happen in the backend.
 - Do not rewrite working code for style alone.

@@ -162,6 +162,18 @@ Default theme: light.
 
   * Drag & Drop file dropzone with supported format indicators (`PDF only`).
 
+### 4.6 Document Credibility & Reporting Signals Card (Left Column)
+
+* **Layout Placement:** Located in the **Left Sidebar ("Sources" panel), positioned directly below the "+ Add PDF Document" button and uploaded document item** (above "Convert other files"). The right sidebar remains dedicated exclusively to the five-part Summary.
+* **Primary Display:** A clean 5-row visual signal checklist (Venue, Citations, References, Author Affiliation, Structure) without an overarching letter or single-grade headline. The composite score is displayed strictly as a small secondary figure at the bottom of the card.
+* **Detail State Transitions:**
+  * **Empty state (no document uploaded):** Card is hidden.
+  * **Processing state:** Skeleton / spinner with *"Analyzing publication signals..."*.
+  * **Completed state:** 5-row signal checklist with badge and secondary score figure.
+  * **Timeout (> 30s) / Error state:** *"Analysis unavailable"*.
+* **Reporting Disclaimer:** Subtext clearly visible on the card: *"Reporting signals score. Does not verify experimental correctness or research quality."*
+* **Estimated References Tooltip:** If estimated references count is under 20, render an *"Estimated from layout"* tooltip.
+
 ## 4.7 Export
 
 The top bar button is labelled “Export”. Its tooltip reads “Downloads an editable Word file.”
