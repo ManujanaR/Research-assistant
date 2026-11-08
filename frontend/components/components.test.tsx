@@ -7,6 +7,7 @@ import {
   waitFor,
   cleanup,
   within,
+  act,
 } from "@testing-library/react";
 
 import { UploadZone } from "./UploadZone";
@@ -19,6 +20,7 @@ import { ExportButton } from "./ExportButton";
 import { ThemeToggle } from "./ThemeToggle";
 import { AuthPanel } from "./AuthPanel";
 import { ConvertLink } from "./ConvertLink";
+import { CredibilityCard } from "./CredibilityCard";
 import { ProfileMenu } from "./ProfileMenu";
 import { ProfileForm } from "./ProfileForm";
 import { ChangePasswordForm } from "./ChangePasswordForm";
@@ -37,6 +39,8 @@ import {
   signOut,
   exportReport,
   SummaryResponse,
+  getDocumentCredibility,
+  CredibilityResponse,
 } from "@/lib/api";
 
 vi.mock("@/lib/api", async () => {
@@ -54,6 +58,7 @@ vi.mock("@/lib/api", async () => {
     signUp: vi.fn(),
     signOut: vi.fn(),
     exportReport: vi.fn(),
+    getDocumentCredibility: vi.fn(),
   };
 });
 
@@ -1452,6 +1457,148 @@ describe("Frontend UI Components", () => {
       expect(successMsg.textContent).toBe(
         "Password changed. Other devices have been signed out."
       );
+    });
+  });
+
+  describe("CredibilityCard", () => {
+    it("renders nothing when docHash is not provided (empty state)", () => {
+      const { container } = render(<CredibilityCard docHash={null} />);
+      expect(container.firstChild).toBeNull();
+    });
+
+    it("renders processing state while analysis is running", async () => {
+      vi.mocked(getDocumentCredibility).mockResolvedValueOnce({
+        status: "processing",
+        external_check: "skipped",
+        score: 0,
+        badge_label: "Analyzing signals...",
+        badge_variant: "neutral",
+        signals: {
+          venue_points: 0,
+          citation_points: 0,
+          reference_points: 0,
+          affiliation_points: 0,
+          structure_points: 0,
+          bonus_points: 0,
+          estimated_references: 0,
+          recorded_citations: 0,
+          has_doi: false,
+          has_academic_affiliation: false,
+          structure_sections_found: 0,
+          open_artifacts_detected: false,
+        },
+        disclaimer: "Reporting signals score.",
+      });
+
+      render(<CredibilityCard docHash="test-doc-hash" />);
+
+      expect(
+        screen.getByTestId("credibility-card-processing")
+      ).toBeDefined();
+      expect(
+        screen.getByText("Analyzing publication signals...")
+      ).toBeDefined();
+    });
+
+    it("renders completed 5-row checklist, badge, bonus, and secondary score", async () => {
+      const completedData: CredibilityResponse = {
+        status: "completed",
+        external_check: "matched",
+        score: 82,
+        badge_label: "Venue Matched in Crossref",
+        badge_variant: "success",
+        signals: {
+          venue_points: 35,
+          citation_points: 20,
+          reference_points: 10,
+          affiliation_points: 10,
+          structure_points: 7,
+          bonus_points: 5,
+          matched_venue: "CVPR",
+          estimated_references: 15,
+          recorded_citations: 25,
+          publication_year: 2021,
+          has_doi: true,
+          doi: "10.1109/cvpr.2021.12345",
+          has_academic_affiliation: true,
+          structure_sections_found: 3,
+          open_artifacts_detected: true,
+        },
+        disclaimer:
+          "Reporting signals score. Does not verify experimental correctness or research quality.",
+      };
+
+      vi.mocked(getDocumentCredibility).mockResolvedValueOnce(completedData);
+
+      render(<CredibilityCard docHash="test-doc-hash" />);
+
+      await waitFor(() => {
+        expect(screen.getByTestId("credibility-card")).toBeDefined();
+      });
+
+      // Badge
+      const badge = screen.getByTestId("credibility-badge");
+      expect(badge.textContent).toBe("Venue Matched in Crossref");
+
+      // 5-Row checklist items
+      expect(screen.getByText("CVPR")).toBeDefined();
+      expect(screen.getByText("15 detected")).toBeDefined();
+      expect(screen.getByText("25 recorded")).toBeDefined();
+      expect(screen.getByText("Academic (.edu / ac)")).toBeDefined();
+      expect(screen.getByText("3/4 sections")).toBeDefined();
+
+      // Tooltip for references < 20
+      expect(screen.getByTestId("ref-estimate-tooltip")).toBeDefined();
+
+      // Bonus row
+      expect(screen.getByTestId("credibility-bonus")).toBeDefined();
+      expect(
+        screen.getByText("+5 bonus: Public code/data repo detected")
+      ).toBeDefined();
+
+      // Secondary figure
+      expect(screen.getByTestId("credibility-score-figure").textContent).toBe(
+        "82/100"
+      );
+    });
+
+    it("renders 'Analysis unavailable' when polling times out (> 30s)", async () => {
+      vi.useFakeTimers();
+
+      vi.mocked(getDocumentCredibility).mockResolvedValue({
+        status: "processing",
+        external_check: "skipped",
+        score: 0,
+        badge_label: "Analyzing signals...",
+        badge_variant: "neutral",
+        signals: {
+          venue_points: 0,
+          citation_points: 0,
+          reference_points: 0,
+          affiliation_points: 0,
+          structure_points: 0,
+          bonus_points: 0,
+          estimated_references: 0,
+          recorded_citations: 0,
+          has_doi: false,
+          has_academic_affiliation: false,
+          structure_sections_found: 0,
+          open_artifacts_detected: false,
+        },
+        disclaimer: "Reporting signals score.",
+      });
+
+      render(<CredibilityCard docHash="test-doc-hash" />);
+
+      // Fast-forward past 30 seconds
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(31000);
+      });
+
+      expect(screen.getByTestId("credibility-card-error")).toBeDefined();
+      expect(screen.getByText("Analysis unavailable")).toBeDefined();
+
+      vi.useRealTimers();
     });
   });
 });

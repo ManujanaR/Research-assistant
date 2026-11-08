@@ -11,9 +11,11 @@ import {
 } from "lucide-react";
 import { UploadZone } from "./UploadZone";
 import { ConvertLink } from "./ConvertLink";
+import { CredibilityCard } from "./CredibilityCard";
 import { UploadResponse } from "@/lib/api";
 
 export interface SourcePanelProps {
+  docHash?: string | null;
   filename?: string | null;
   pageCount?: number | null;
   chunkCount?: number | null;
@@ -23,6 +25,7 @@ export interface SourcePanelProps {
 }
 
 export function SourcePanel({
+  docHash,
   filename,
   pageCount,
   chunkCount,
@@ -92,6 +95,9 @@ export function SourcePanel({
               </span>
             </div>
           </div>
+
+          {/* Credibility & Publication Signals Card */}
+          <CredibilityCard docHash={docHash} />
 
           {/* Action: Upload another paper */}
           <div className="pt-2">

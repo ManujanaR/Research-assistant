@@ -221,6 +221,7 @@ export default function Home() {
           className="w-[280px] flex-shrink-0 h-full overflow-y-auto border-r border-border-subtle bg-surface-panel transition-colors"
         >
           <SourcePanel
+            docHash={uploadResult?.doc_hash}
             filename={uploadResult?.filename}
             pageCount={uploadResult?.page_count}
             chunkCount={uploadResult?.chunk_count}
@@ -261,6 +262,7 @@ export default function Home() {
           {activeTab === "source" && (
             <div className="h-full w-full">
               <SourcePanel
+                docHash={uploadResult?.doc_hash}
                 filename={uploadResult?.filename}
                 pageCount={uploadResult?.page_count}
                 chunkCount={uploadResult?.chunk_count}

@@ -543,3 +543,58 @@ export async function exportReport(
   return { blob, filename };
 }
 
+export interface CredibilitySignals {
+  venue_points: number;
+  citation_points: number;
+  reference_points: number;
+  affiliation_points: number;
+  structure_points: number;
+  bonus_points: number;
+  matched_venue?: string | null;
+  estimated_references: number;
+  recorded_citations: number;
+  publication_year?: number | null;
+  has_doi: boolean;
+  doi?: string | null;
+  has_academic_affiliation: boolean;
+  structure_sections_found: number;
+  open_artifacts_detected: boolean;
+}
+
+export interface CredibilityResponse {
+  status: "processing" | "completed" | "error";
+  external_check: "matched" | "not_matched" | "skipped" | "error";
+  score: number;
+  badge_label: string;
+  badge_variant: "success" | "warning" | "neutral";
+  signals: CredibilitySignals;
+  disclaimer: string;
+}
+
+export async function getDocumentCredibility(
+  docHash: string
+): Promise<CredibilityResponse> {
+  let response: Response;
+  try {
+    response = await fetch(
+      `${BASE_URL}/api/documents/${encodeURIComponent(docHash)}/credibility`,
+      {
+        method: "GET",
+        headers: {
+          Accept: "application/json",
+        },
+        credentials: "include",
+      }
+    );
+  } catch (err) {
+    throw new ApiError(0, err instanceof Error ? err.message : "Network error");
+  }
+
+  if (!response.ok) {
+    throw await parseErrorResponse(response);
+  }
+
+  return response.json();
+}
+
+
