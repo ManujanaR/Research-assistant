@@ -45,7 +45,10 @@ Authentication and per-user document ownership are in scope; see section 9.
 ## 3. Summary Generation & Schema
 
 ### Five Required Sections (In Exact Order)
-1. `title_authors_abstract`: Title, Authors, and Abstract
+1. `header`: Header object with three structured string fields:
+   - `title`: Title of the paper
+   - `authors`: Listed authors of the paper
+   - `abstract`: Abstract summary of the paper
 2. `problem_statement`: Problem Statement
 3. `methodology`: Methodology
 4. `key_results`: Key Results
@@ -53,12 +56,19 @@ Authentication and per-user document ownership are in scope; see section 9.
 
 ### Pydantic Schema
 ```python
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
+
+class SummaryHeader(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    title: str = Field(..., description="The paper's title.")
+    authors: str = Field(..., description="The listed authors of the paper.")
+    abstract: str = Field(..., description="The paper's abstract.")
 
 class SummarySchema(BaseModel):
-    title_authors_abstract: str = Field(
+    header: SummaryHeader = Field(
         ...,
-        description="The paper's title, listed authors, and abstract summary."
+        description="Structured paper header containing title, authors, and abstract."
     )
     problem_statement: str = Field(
         ...,
@@ -79,14 +89,15 @@ class SummarySchema(BaseModel):
 ```
 
 ### Missing Information Handling
-- All five keys must always be present in the JSON response. If any key is missing from the output, it is treated as a schema validation failure and triggers the retry mechanism.
-- If a paper lacks explicit information for any section (e.g., missing conclusion or unclear problem statement), the model must include the key with its value set strictly to:
+- All keys must always be present in the JSON response, including all three fields within `header` (`title`, `authors`, and `abstract`). If any key is missing from the output, it is treated as a schema validation failure and triggers the retry mechanism.
+- If a paper lacks explicit information for any section or header field (e.g., missing conclusion, unlisted authors, or unclear problem statement), the model must include the key with its value set strictly to:
   `"Not stated in the paper."`
 
 ### Caching Strategy & Execution Order
 - **Key**: SHA-256 hash computed directly from the raw binary content of the uploaded PDF upon receipt.
 - **Execution Order**: The cache check is executed **before any LLM invocation**. If a summary matching the SHA-256 hash exists in cache, it is returned immediately without contacting the LLM provider.
 - **Storage**: In-memory cache with fallback to temporary disk cache (`backend/app/services/cache.py`).
+- **Version Invalidation**: Cached summaries created before this change are regenerated automatically, because the cache version is bumped (`SUMMARY_VERSION = 2`). Any cache entry with an older version or lacking the version key is treated as a cache miss.
 
 ### Validation Failure & Retry Rule
 - When a cache miss occurs, the LLM is queried to generate the summary.
