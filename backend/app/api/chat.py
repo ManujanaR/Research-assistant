@@ -18,6 +18,7 @@ from app.db.session import get_db
 from app.models.user import User
 from app.schemas.chat import ChatRequest
 from app.services.classifier import classify_and_rewrite
+from app.services.metadata_service import get_document_metadata
 from app.services.ownership_service import is_owner
 from app.services.qa import (
     FALLBACK_GROUNDING_MESSAGE,
@@ -182,7 +183,32 @@ async def chat(
     ]
     sorted_relevant = sorted(relevant_chunks, key=lambda c: c.distance)[:3]
 
-    if not sorted_relevant:
+    meta = get_document_metadata(request.doc_hash, db=db)
+    metadata_dict: dict[str, Any] = {
+        "title": meta.title if meta else None,
+        "authors": meta.authors if meta else None,
+        "detected_publisher": meta.detected_publisher if meta else None,
+        "detected_venue": meta.detected_venue if meta else None,
+        "publication_year": meta.publication_year if meta else None,
+    }
+
+    if not metadata_dict["title"] or not metadata_dict["authors"]:
+        summary_header = get_title_authors_abstract(request.doc_hash)
+        if summary_header and not metadata_dict["title"]:
+            metadata_dict["title"] = summary_header
+
+    has_metadata_fields = any(
+        metadata_dict.get(k) is not None
+        for k in [
+            "detected_publisher",
+            "detected_venue",
+            "publication_year",
+            "title",
+            "authors",
+        ]
+    )
+
+    if not sorted_relevant and not has_metadata_fields:
         return StreamingResponse(
             stream_static_message(FALLBACK_GROUNDING_MESSAGE),
             media_type="text/event-stream",
@@ -193,6 +219,7 @@ async def chat(
         question=request.message,
         history=request.history,
         chunks=sorted_relevant,
+        metadata=metadata_dict,
     )
 
     return StreamingResponse(
