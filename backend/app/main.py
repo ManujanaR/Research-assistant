@@ -29,7 +29,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
 
 app = FastAPI(
-    title="Mitra Research Assistant API",
+    title="Research Assistant for PDFs API",
     version="1.0.0",
     description="Backend API for research paper upload, structured summary, and grounded Q&A.",
     lifespan=lifespan,

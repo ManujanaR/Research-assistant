@@ -20,7 +20,7 @@ export function ConvertLink() {
         data-testid="convert-link-caption"
         className="text-[11px] text-text-muted text-center leading-normal"
       >
-        Opens iLovePDF in a new tab. Your file is sent to iLovePDF, not to Mitra.
+        Opens iLovePDF in a new tab. Your file is sent to iLovePDF, not to us.
       </p>
     </div>
   );

@@ -113,7 +113,7 @@ Default theme: light.
 
 * **Below the upload zone (shown only before a paper is uploaded):**
   * A secondary button labelled “Convert other files”.
-  * A caption under it: “Opens iLovePDF in a new tab. Your file is sent to iLovePDF, not to Mitra.”
+  * A caption under it: “Opens iLovePDF in a new tab. Your file is sent to iLovePDF, not to Research Assistant.”
   * The button opens https://www.ilovepdf.com with target="_blank" and rel="noopener noreferrer".
 
 ### 4.3 Center Workspace & Chat (Center Column)

@@ -1,1 +1,1 @@
-"""Mitra Research Assistant backend package."""
+"""Research Assistant backend package."""

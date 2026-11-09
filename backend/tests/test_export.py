@@ -159,7 +159,7 @@ def test_export_endpoint_valid_docx(
     )
     assert (
         resp.headers["content-disposition"]
-        == f'attachment; filename="mitra-report-{VALID_HASH[:8]}.docx"'
+        == f'attachment; filename="research-report-{VALID_HASH[:8]}.docx"'
     )
 
     doc = docx.Document(io.BytesIO(resp.content))

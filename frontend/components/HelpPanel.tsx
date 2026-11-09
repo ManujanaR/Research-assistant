@@ -140,7 +140,7 @@ export function HelpPanel({ isOpen, onClose, triggerRef }: HelpPanelProps) {
               data-testid="help-panel-title"
               className="text-lg font-semibold text-text-primary tracking-tight"
             >
-              How to use Mitra
+              How to use this
             </h2>
           </div>
           <button
@@ -168,7 +168,7 @@ export function HelpPanel({ isOpen, onClose, triggerRef }: HelpPanelProps) {
               </h3>
             </div>
             <p className="text-sm text-text-secondary leading-relaxed pl-8">
-              Upload a text-based PDF up to 20 MB. Once uploaded, Mitra automatically processes the document and generates a structured summary in seconds.
+              Upload a text-based PDF up to 20 MB. Once uploaded, the assistant automatically processes the document and generates a structured summary in seconds.
             </p>
           </section>
 
@@ -183,7 +183,7 @@ export function HelpPanel({ isOpen, onClose, triggerRef }: HelpPanelProps) {
               </h3>
             </div>
             <p className="text-sm text-text-secondary leading-relaxed pl-8">
-              The summary is organized into 5 sections: Title & Authors & Abstract, Problem Statement, Methodology, Key Results, and Conclusion. Click the copy button in any section to quickly copy its text. If a section is not discussed in the paper, Mitra explicitly notes &ldquo;Not stated in the paper.&rdquo;
+              The summary is organized into 5 sections: Title & Authors & Abstract, Problem Statement, Methodology, Key Results, and Conclusion. Click the copy button in any section to quickly copy its text. If a section is not discussed in the paper, the summary explicitly notes &ldquo;Not stated in the paper.&rdquo;
             </p>
           </section>
 
@@ -198,7 +198,7 @@ export function HelpPanel({ isOpen, onClose, triggerRef }: HelpPanelProps) {
               </h3>
             </div>
             <p className="text-sm text-text-secondary leading-relaxed pl-8">
-              Ask plain language questions in the chat panel. Answers are strictly document-grounded in the uploaded paper. If the paper does not contain the answer, Mitra will inform you directly.
+              Ask plain language questions in the chat panel. Answers are strictly document-grounded in the uploaded paper. If the paper does not contain the answer, the assistant will inform you directly.
             </p>
           </section>
 

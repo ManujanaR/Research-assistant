@@ -124,7 +124,7 @@ async def export_report(
         duration,
     )
 
-    attachment_filename = f"mitra-report-{doc_hash[:8]}.docx"
+    attachment_filename = f"research-report-{doc_hash[:8]}.docx"
     return Response(
         content=docx_bytes,
         media_type=DOCX_MEDIA_TYPE,

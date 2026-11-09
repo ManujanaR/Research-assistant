@@ -373,8 +373,8 @@ GREETING_OR_SMALLTALK_PATTERNS = [
     r"^(thanks?|thank\s+you)(\s+(so\s+much|very\s+much|a\s+lot|again|for\s+your\s+help|for\s+helping|for\s+the\s+help))?$",
     r"^(many\s+thanks|thx|ty|much\s+appreciated|greatly\s+appreciated|appreciate\s+it)$",
     # Greetings
-    r"^(hi|hello|hey|howdy|greetings|hola)(\s+(there|assistant|bot|mitra))?$",
-    r"^good\s+(morning|afternoon|evening|day)(\s+(there|assistant|bot|mitra))?$",
+    r"^(hi|hello|hey|howdy|greetings|hola)(\s+(there|assistant|bot))?$",
+    r"^good\s+(morning|afternoon|evening|day)(\s+(there|assistant|bot))?$",
     # Farewells
     r"^(bye|goodbye|see\s+ya|see\s+you|farewell|cya)$",
     r"^have\s+a\s+(good|nice|great)\s+(day|night|one)$",

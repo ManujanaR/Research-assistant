@@ -1,1 +1,1 @@
-"""Mitra Research Assistant test package."""
+"""Research Assistant test package."""

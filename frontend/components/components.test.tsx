@@ -538,7 +538,7 @@ describe("Frontend UI Components", () => {
       expect(link.getAttribute("rel")).toBe("noopener noreferrer");
       expect(
         screen.getByText(
-          "Opens iLovePDF in a new tab. Your file is sent to iLovePDF, not to Mitra."
+          "Opens iLovePDF in a new tab. Your file is sent to iLovePDF, not to us."
         )
       ).toBeDefined();
     });
@@ -557,7 +557,7 @@ describe("Frontend UI Components", () => {
       ).toBeNull();
       expect(
         screen.queryByText(
-          "Opens iLovePDF in a new tab. Your file is sent to iLovePDF, not to Mitra."
+          "Opens iLovePDF in a new tab. Your file is sent to iLovePDF, not to us."
         )
       ).toBeNull();
     });
