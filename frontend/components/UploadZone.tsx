@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useRef, useState } from "react";
-import { UploadCloud, Loader2, AlertCircle } from "lucide-react";
+import { UploadCloud, Loader2, AlertCircle, FileText } from "lucide-react";
 import { ApiError, UploadResponse, uploadPdf } from "@/lib/api";
 
 export interface UploadZoneProps {
@@ -9,6 +9,8 @@ export interface UploadZoneProps {
   disabled?: boolean;
   ocr_used?: boolean;
   ocrUsed?: boolean;
+  filename?: string | null;
+  onReset?: () => void;
 }
 
 const MAX_UPLOAD_MB =
@@ -21,11 +23,14 @@ export function UploadZone({
   disabled = false,
   ocr_used,
   ocrUsed: ocrUsedProp,
+  filename: propFilename,
+  onReset,
 }: UploadZoneProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [ocrUsed, setOcrUsed] = useState(Boolean(ocr_used ?? ocrUsedProp));
+  const [localFilename, setLocalFilename] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   React.useEffect(() => {
@@ -35,6 +40,14 @@ export function UploadZone({
       setOcrUsed(ocrUsedProp);
     }
   }, [ocr_used, ocrUsedProp]);
+
+  const currentFilename = propFilename !== undefined ? propFilename : localFilename;
+
+  const handleReset = () => {
+    setLocalFilename(null);
+    setError(null);
+    onReset?.();
+  };
 
   const validateFile = (file: File): string | null => {
     const isPdfMime = file.type === "application/pdf";
@@ -69,6 +82,7 @@ export function UploadZone({
       } else {
         setOcrUsed(false);
       }
+      setLocalFilename(response.filename || file.name);
       onUploaded(response);
     } catch (err) {
       if (err instanceof ApiError) {
@@ -122,6 +136,57 @@ export function UploadZone({
       fileInputRef.current?.click();
     }
   };
+
+  if (currentFilename) {
+    return (
+      <div className="w-full space-y-3.5">
+        <div
+          data-testid="compact-source-row"
+          className="flex items-center justify-between gap-3 p-3 bg-surface-elevated border border-border-subtle rounded-2xl transition-colors shadow-sm"
+        >
+          <div className="flex items-center gap-2.5 min-w-0 flex-1">
+            <div className="p-2 bg-surface-pill text-blue-600 dark:text-accent-blue rounded-xl flex-shrink-0 border border-border-subtle">
+              <FileText className="w-4 h-4" />
+            </div>
+            <h2
+              title={currentFilename}
+              className="text-xs sm:text-sm font-semibold text-text-primary truncate"
+            >
+              {currentFilename}
+            </h2>
+          </div>
+
+          <button
+            type="button"
+            onClick={handleReset}
+            className="text-xs font-medium text-blue-600 dark:text-accent-blue hover:underline flex-shrink-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded px-1"
+          >
+            Upload another paper
+          </button>
+        </div>
+
+        {ocrUsed && (
+          <div
+            data-testid="ocr-note"
+            className="flex items-start gap-2.5 p-3.5 text-sm text-amber-800 dark:text-amber-200 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/60 rounded-xl"
+          >
+            <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5 text-amber-600 dark:text-amber-400" />
+            <span>This paper was read with OCR. Check the summary against the original.</span>
+          </div>
+        )}
+
+        {error && (
+          <div
+            role="alert"
+            className="flex items-start gap-2.5 p-3.5 text-sm text-red-700 dark:text-red-300 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900/60 rounded-xl"
+          >
+            <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5 text-red-600 dark:text-red-400" />
+            <span>{error}</span>
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="w-full">

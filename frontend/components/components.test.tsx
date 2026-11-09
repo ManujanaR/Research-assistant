@@ -559,6 +559,127 @@ describe("Frontend UI Components", () => {
         )
       ).toBeNull();
     });
+
+    it("only one upload control is rendered before upload", () => {
+      render(<SourcePanel filename={null} onReset={vi.fn()} />);
+
+      // Single drop zone is rendered
+      expect(
+        screen.getByText("Click to upload or drag and drop")
+      ).toBeDefined();
+      expect(
+        screen.getByText("PDF documents only (up to 20MB)")
+      ).toBeDefined();
+      expect(
+        screen.getAllByRole("button", { name: /click to upload/i })
+      ).toHaveLength(1);
+
+      // The "+ Add PDF Document" button is removed
+      expect(
+        screen.queryByRole("button", { name: /add pdf document/i })
+      ).toBeNull();
+
+      // Only one file input is rendered in the DOM
+      const fileInputs = document.querySelectorAll('input[type="file"]');
+      expect(fileInputs).toHaveLength(1);
+    });
+
+    it("the drop zone accepts a file through click and through a drop event", async () => {
+      const mockResult = {
+        doc_hash: "d".repeat(64),
+        filename: "test-paper.pdf",
+        size_bytes: 1024,
+        page_count: 4,
+        chunk_count: 10,
+      };
+      vi.mocked(uploadPdf).mockResolvedValue(mockResult);
+
+      // 1. Through click / file input change
+      const onUploadedClick = vi.fn();
+      const { unmount } = render(
+        <UploadZone onUploaded={onUploadedClick} />
+      );
+
+      const dropZoneClick = screen.getByRole("button", {
+        name: /click to upload/i,
+      });
+      fireEvent.click(dropZoneClick);
+
+      const fileClick = new File(["click pdf"], "test-paper.pdf", {
+        type: "application/pdf",
+      });
+      const inputClick = document.querySelector(
+        'input[type="file"]'
+      ) as HTMLInputElement;
+      fireEvent.change(inputClick, { target: { files: [fileClick] } });
+
+      await waitFor(() => {
+        expect(onUploadedClick).toHaveBeenCalledWith(mockResult);
+      });
+      unmount();
+
+      // 2. Through drop event
+      const onUploadedDrop = vi.fn();
+      render(<UploadZone onUploaded={onUploadedDrop} />);
+
+      const dropZone = screen.getByRole("button", {
+        name: /click to upload/i,
+      });
+      const fileDrop = new File(["drop pdf"], "test-paper.pdf", {
+        type: "application/pdf",
+      });
+
+      fireEvent.dragOver(dropZone);
+      fireEvent.drop(dropZone, {
+        dataTransfer: { files: [fileDrop] },
+      });
+
+      await waitFor(() => {
+        expect(onUploadedDrop).toHaveBeenCalledWith(mockResult);
+      });
+    });
+
+    it("after upload, the compact row shows the filename and the 'Upload another paper' link", async () => {
+      const onReset = vi.fn();
+      const { rerender } = render(
+        <SourcePanel filename={null} onReset={onReset} />
+      );
+
+      // Before upload: drop zone visible, compact row not visible
+      expect(
+        screen.getByText("Click to upload or drag and drop")
+      ).toBeDefined();
+      expect(screen.queryByTestId("compact-source-row")).toBeNull();
+
+      // After upload: filename provided
+      rerender(
+        <SourcePanel filename="attention-mechanism.pdf" onReset={onReset} />
+      );
+
+      // Drop zone replaced by compact row
+      expect(
+        screen.queryByText("Click to upload or drag and drop")
+      ).toBeNull();
+      const compactRow = screen.getByTestId("compact-source-row");
+      expect(compactRow).toBeDefined();
+      expect(within(compactRow).getByText("attention-mechanism.pdf")).toBeDefined();
+
+      const uploadAnotherLink = within(compactRow).getByRole("button", {
+        name: /upload another paper/i,
+      });
+      expect(uploadAnotherLink).toBeDefined();
+
+      // Clicking link triggers onReset to return to drop zone
+      fireEvent.click(uploadAnotherLink);
+      expect(onReset).toHaveBeenCalledTimes(1);
+
+      // Returning drop zone when filename is cleared
+      rerender(<SourcePanel filename={null} onReset={onReset} />);
+      expect(
+        screen.getByText("Click to upload or drag and drop")
+      ).toBeDefined();
+      expect(screen.queryByTestId("compact-source-row")).toBeNull();
+    });
   });
 
   describe("ConvertLink", () => {
