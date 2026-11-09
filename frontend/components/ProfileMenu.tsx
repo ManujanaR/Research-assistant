@@ -47,7 +47,7 @@ export function ProfileMenu({ user, onUserUpdate, onSignOut }: ProfileMenuProps)
     setInitials(computeInitials(user.display_name, user.email));
   }, [user.display_name, user.email]);
 
-  // Top bar portal mounting
+  // Top bar portal mounting: pinned at the end of the action group
   useEffect(() => {
     const headerActions =
       document.querySelector('[data-testid="top-bar-actions"]') ||
@@ -55,18 +55,10 @@ export function ProfileMenu({ user, onUserUpdate, onSignOut }: ProfileMenuProps)
       document.querySelector("header .flex.items-center.gap-2\\.5");
 
     if (headerActions) {
-      const themeToggle =
-        headerActions.querySelector('button[aria-label*="theme" i]') ||
-        headerActions.querySelector('button[data-testid="theme-toggle"]') ||
-        headerActions.lastElementChild;
-
       const container = document.createElement("div");
-      container.className = "flex items-center flex-shrink-0 min-w-0";
-      if (themeToggle && themeToggle.parentNode === headerActions) {
-        headerActions.insertBefore(container, themeToggle);
-      } else {
-        headerActions.appendChild(container);
-      }
+      container.className = "flex items-center shrink-0 min-w-0";
+      container.setAttribute("data-testid", "profile-menu-portal");
+      headerActions.appendChild(container);
       setPortalTarget(container);
 
       return () => {
@@ -160,7 +152,7 @@ export function ProfileMenu({ user, onUserUpdate, onSignOut }: ProfileMenuProps)
   };
 
   const content = (
-    <div className="relative inline-block text-left flex-shrink-0" data-testid="profile-menu-container">
+    <div className="relative inline-block text-left shrink-0" data-testid="profile-menu-container">
       {/* Avatar button */}
       <button
         ref={avatarRef}
@@ -178,7 +170,7 @@ export function ProfileMenu({ user, onUserUpdate, onSignOut }: ProfileMenuProps)
             }
           }
         }}
-        className="w-8 h-8 rounded-full bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs flex items-center justify-center flex-shrink-0 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 shadow-sm"
+        className="w-11 h-11 sm:w-8 sm:h-8 min-h-[44px] min-w-[44px] sm:min-h-0 sm:min-w-0 rounded-full bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs flex items-center justify-center shrink-0 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 shadow-sm"
       >
         {initials}
       </button>

@@ -38,16 +38,16 @@ export default function RootLayout({
       </head>
       <body className="min-h-screen h-dvh bg-bg-base text-text-primary antialiased flex flex-col overflow-hidden transition-colors duration-150">
         <header className="h-14 sm:h-16 border-b border-border-subtle bg-surface-panel flex-shrink-0 z-10 shadow-sm transition-colors duration-150">
-          <div className="w-full px-3 sm:px-6 lg:px-8 h-full flex items-center justify-between min-w-0">
-            <div className="flex items-center gap-1.5 sm:gap-2.5 flex-shrink-0">
-              <span className="text-lg sm:text-xl font-bold tracking-tight text-blue-600 dark:text-accent-blue">
-                Research
-              </span>
-              <span className="text-lg sm:text-xl font-medium text-slate-700 dark:text-text-primary">
-                Assistant
+          <div className="w-full px-3 sm:px-6 lg:px-8 h-full flex items-center justify-between gap-2 min-w-0">
+            <div className="flex min-w-0 items-center gap-2">
+              <span className="truncate text-lg sm:text-xl font-bold tracking-tight text-blue-600 dark:text-accent-blue">
+                Research{" "}
+                <span className="hidden sm:inline font-medium text-slate-700 dark:text-text-primary">
+                  Assistant
+                </span>
               </span>
             </div>
-            <div data-testid="top-bar-actions" className="flex items-center gap-2 sm:gap-2.5 min-w-0 flex-shrink">
+            <div data-testid="top-bar-actions" className="flex shrink-0 items-center gap-1.5">
               <span className="hidden lg:inline-flex text-xs font-medium px-2.5 py-1 bg-surface-pill text-blue-700 dark:text-accent-blue rounded-full border border-border-subtle">
                 Grounded AI
               </span>

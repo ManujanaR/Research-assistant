@@ -28,7 +28,7 @@ export const HelpButton = forwardRef<HTMLButtonElement, HelpButtonProps>(
           headerActions.lastElementChild;
 
         const container = document.createElement("div");
-        container.className = "flex items-center flex-shrink-0 min-w-0";
+        container.className = "flex items-center shrink-0 min-w-0";
         container.setAttribute("data-testid", "help-button-container");
 
         if (themeToggle && themeToggle.parentNode === headerActions) {
@@ -65,11 +65,11 @@ export const HelpButton = forwardRef<HTMLButtonElement, HelpButtonProps>(
         aria-expanded={isOpen}
         title="Help"
         data-testid="help-button"
-        className={`w-11 h-11 flex items-center justify-center rounded-xl border border-border-subtle bg-surface-panel text-text-secondary hover:bg-surface-pill-hover hover:text-text-primary transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 min-h-[44px] min-w-[44px] flex-shrink-0 ${
+        className={`w-11 h-11 flex items-center justify-center rounded-xl border border-border-subtle bg-surface-panel text-text-secondary hover:bg-surface-pill-hover hover:text-text-primary transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 min-h-[44px] min-w-[44px] shrink-0 ${
           isOpen ? "bg-surface-pill text-blue-600 dark:text-accent-blue border-blue-500/30" : ""
         } ${className}`}
       >
-        <CircleHelp className="w-5 h-5" />
+        <CircleHelp className="w-4 h-4 text-text-secondary" />
       </button>
     );
 

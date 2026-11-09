@@ -22,15 +22,19 @@ export function ExportButton({ docHash, messages = [] }: ExportButtonProps) {
       document.querySelector("header.bg-surface-panel .flex.items-center.gap-2\\.5") ||
       document.querySelector("header .flex.items-center.gap-2\\.5");
     if (headerActions) {
-      const themeToggle =
+      const nextControl =
+        headerActions.querySelector('[data-testid="view-pdf-button-container"]') ||
+        headerActions.querySelector('[data-testid="help-button-container"]') ||
+        headerActions.querySelector('button[aria-label="Help"]') ||
+        headerActions.querySelector('[data-testid="theme-toggle"]') ||
         headerActions.querySelector('button[aria-label*="theme" i]') ||
-        headerActions.querySelector('button[data-testid="theme-toggle"]') ||
         headerActions.lastElementChild;
 
       const container = document.createElement("div");
-      container.className = "flex items-center flex-shrink-0 min-w-0";
-      if (themeToggle && themeToggle.parentNode === headerActions) {
-        headerActions.insertBefore(container, themeToggle);
+      container.className = "flex items-center shrink-0 min-w-0";
+      container.setAttribute("data-testid", "export-button-container");
+      if (nextControl && nextControl.parentNode === headerActions) {
+        headerActions.insertBefore(container, nextControl);
       } else {
         headerActions.appendChild(container);
       }
@@ -128,7 +132,7 @@ export function ExportButton({ docHash, messages = [] }: ExportButtonProps) {
   };
 
   const buttonContent = (
-    <div className="flex items-center gap-1.5 sm:gap-2 flex-shrink-0">
+    <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
       <button
         type="button"
         data-testid="export-btn"
@@ -136,12 +140,12 @@ export function ExportButton({ docHash, messages = [] }: ExportButtonProps) {
         disabled={isDisabled}
         aria-label={isExporting ? "Preparing file" : "Export"}
         title="Downloads an editable Word file."
-        className="inline-flex items-center justify-center gap-1.5 px-2.5 sm:px-3 py-1.5 text-xs font-medium rounded-xl border border-border-subtle bg-surface-panel hover:bg-surface-pill-hover text-text-primary disabled:opacity-50 disabled:cursor-not-allowed transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 shadow-sm min-h-[44px] min-w-[44px] sm:min-w-0 flex-shrink-0"
+        className="inline-flex items-center justify-center gap-1.5 px-2.5 sm:px-3 py-1.5 text-xs font-medium rounded-xl border border-border-subtle bg-surface-panel hover:bg-surface-pill-hover text-text-primary disabled:opacity-50 disabled:cursor-not-allowed transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 shadow-sm min-h-[44px] min-w-[44px] sm:min-w-0 shrink-0"
       >
         {isExporting ? (
-          <Loader2 className="w-4 h-4 text-text-secondary animate-spin flex-shrink-0" />
+          <Loader2 className="w-4 h-4 text-text-secondary animate-spin shrink-0" />
         ) : (
-          <Download className="w-4 h-4 text-text-secondary flex-shrink-0" />
+          <Download className="w-4 h-4 text-text-secondary shrink-0" />
         )}
         <span className="hidden sm:inline">
           {isExporting ? "Preparing file" : "Export"}

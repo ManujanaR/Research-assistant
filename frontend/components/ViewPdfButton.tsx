@@ -37,7 +37,7 @@ export const ViewPdfButton = forwardRef<HTMLButtonElement, ViewPdfButtonProps>(
           headerActions.lastElementChild;
 
         const container = document.createElement("div");
-        container.className = "flex items-center flex-shrink-0 min-w-0";
+        container.className = "flex items-center shrink-0 min-w-0";
         container.setAttribute("data-testid", "view-pdf-button-container");
 
         if (helpControl && helpControl.parentNode === headerActions) {
@@ -78,12 +78,12 @@ export const ViewPdfButton = forwardRef<HTMLButtonElement, ViewPdfButtonProps>(
         aria-expanded={isOpen}
         title="View PDF"
         data-testid="view-pdf-button"
-        className={`flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl border border-border-subtle bg-surface-panel text-text-secondary hover:bg-surface-pill-hover hover:text-text-primary transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 min-h-[44px] min-w-[44px] flex-shrink-0 ${
+        className={`flex items-center justify-center gap-1.5 px-2.5 sm:px-3 py-2 rounded-xl border border-border-subtle bg-surface-panel text-text-secondary hover:bg-surface-pill-hover hover:text-text-primary transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 min-h-[44px] min-w-[44px] shrink-0 ${
           isOpen ? "bg-surface-pill text-blue-600 dark:text-accent-blue border-blue-500/30" : ""
         } ${className}`}
       >
-        <FileText className="w-4 h-4 text-blue-600 dark:text-accent-blue flex-shrink-0" />
-        <span className="hidden lg:inline text-xs font-medium text-text-primary">
+        <FileText className="w-4 h-4 text-blue-600 dark:text-accent-blue shrink-0" />
+        <span className="hidden sm:inline text-xs font-medium text-text-primary">
           View PDF
         </span>
       </button>
