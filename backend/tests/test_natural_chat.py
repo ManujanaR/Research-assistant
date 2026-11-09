@@ -77,7 +77,12 @@ class RecordingChatClient:
     async def create(self, **kwargs: Any) -> Any:
         if kwargs.get("stream"):
             self.stream_calls.append(kwargs)
-            return FakeStream(self.stream_tokens)
+            tokens = (
+                self.stream_tokens(kwargs)
+                if callable(self.stream_tokens)
+                else self.stream_tokens
+            )
+            return FakeStream(tokens)
 
         self.rewrite_calls.append(kwargs)
         if self.rewrite_should_fail:
@@ -1129,3 +1134,230 @@ async def test_case_insensitive_query_rewriting_and_retrieval(tmp_path: Path) ->
 
     # Normalisation guarantees exact match and zero distance
     assert cosine_distance == pytest.approx(0.0, abs=1e-9)
+
+
+@pytest.mark.asyncio
+async def test_contextual_query_rewriter_scope_instruction_and_capping() -> None:
+    """Verify that rewriter instructions contain broad-query contextualisation rules and cap scope at 1,000 chars."""
+    required_instruction = (
+        "For a broad or underspecified question, write the search query around how the paper’s scope addresses that topic, such as its findings, measured effects, or context. "
+        "Do not write a general encyclopaedic definition. If the question has no connection to the paper’s scope, keep the query as close to the question’s own words as possible, and do not add paper-specific terms."
+    )
+    assert required_instruction in REWRITE_INSTRUCTION
+
+    fake_client = RecordingChatClient(rewrite_output="covid-19 student outcomes")
+
+    # Pass scope exceeding 1,000 characters
+    long_scope = "COVID-19 and Student Outcomes: " + ("academic performance " * 80)
+    assert len(long_scope) > 1000
+
+    result = await rewrite_query(
+        question="covid-19",
+        history=[],
+        client=fake_client,
+        scope=long_scope,
+    )
+    assert result == "covid-19 student outcomes"
+    call = fake_client.rewrite_calls[0]
+    system_content = call["messages"][0]["content"]
+    assert "Paper Scope (Title & Abstract):" in system_content
+    # Verified capped at 1,000 characters
+    scope_injected = system_content.split("Paper Scope (Title & Abstract):\n")[1]
+    assert len(scope_injected) == 1000
+
+    # Missing scope must pass empty string and not fail
+    fake_client_no_scope = RecordingChatClient(rewrite_output="covid-19")
+    result_empty = await rewrite_query(
+        question="covid-19",
+        history=[],
+        client=fake_client_no_scope,
+        scope="",
+    )
+    assert result_empty == "covid-19"
+    system_content_empty = fake_client_no_scope.rewrite_calls[0]["messages"][0][
+        "content"
+    ]
+    assert "Paper Scope (Title & Abstract):" not in system_content_empty
+
+
+def test_contextual_query_rewriting_broad_and_offtopic_e2e(
+    auth_client: AuthenticatedTestClient, tmp_path: Path
+) -> None:
+    """End-to-end tests for broad query contextualisation, retrieval grounding, off-topic safety, and untouched questions."""
+    doc_hash = "8" * 64
+    chroma_dir = tmp_path / "chroma_scope_test"
+    chroma_client = chromadb.PersistentClient(path=str(chroma_dir))
+
+    # Deterministic embedder
+    class ScopeEmbedder:
+        def __init__(self) -> None:
+            self.queries_received: list[str] = []
+
+        async def __call__(self, texts: list[str]) -> list[list[float]]:
+            self.queries_received.extend(texts)
+            embeddings: list[list[float]] = []
+            for t in texts:
+                lower = t.lower()
+                # COVID / student outcomes vector
+                if "covid" in lower or "student" in lower or "outcome" in lower:
+                    embeddings.append([1.0, 0.0])
+                else:
+                    embeddings.append([0.0, 1.0])
+            return embeddings
+
+    embedder = ScopeEmbedder()
+    chunk_text = "Student exam performance and learning outcomes suffered significantly during the COVID-19 pandemic."
+
+    asyncio.run(
+        index_document(
+            doc_hash=doc_hash,
+            chunks=[{"text": chunk_text, "page": 1}],
+            embed_fn=embedder,
+            client=chroma_client,
+        )
+    )
+    auth_client.record_ownership(doc_hash)
+
+    # Store paper scope in summary cache
+    from app.core.dependencies import get_summary_cache
+
+    cache = get_summary_cache()
+    cache.set(
+        doc_hash,
+        {
+            "header": {
+                "title": "Impact of COVID-19 on Student Outcomes",
+                "authors": "Smith et al.",
+                "abstract": "A comprehensive study of student academic performance and learning outcomes during COVID-19.",
+            },
+            "problem_statement": "School disruptions during the pandemic.",
+            "methodology": "Standardized testing analysis.",
+            "key_results": "Significant reduction in student achievement.",
+            "conclusion": "Supportive learning measures are urgently needed.",
+        },
+    )
+
+    def dynamic_llm(kwargs: dict[str, Any]) -> Any:
+        messages = kwargs.get("messages", [])
+        sys_text = messages[0]["content"] if messages else ""
+        user_msg = messages[-1]["content"] if messages else ""
+
+        # Verify scope is passed to classifier / rewriter
+        assert "Paper Scope (Title & Abstract):" in sys_text
+        assert "Impact of COVID-19 on Student Outcomes" in sys_text
+
+        # 1. Broad query contextualisation
+        if "covid-19" in user_msg.lower():
+            return json.dumps(
+                {
+                    "intent": "document_question",
+                    "query": "COVID-19 student outcomes impact",
+                }
+            )
+
+        # 3. Off-topic query safety: keep query close to user's words, no paper terms added
+        if "cake" in user_msg.lower():
+            return json.dumps(
+                {
+                    "intent": "document_question",
+                    "query": "how to bake a cake",
+                }
+            )
+
+        return json.dumps({"intent": "document_question", "query": user_msg})
+
+    def stream_handler(kwargs: dict[str, Any]) -> list[str]:
+        messages = kwargs.get("messages", [])
+        sys_text = messages[0]["content"] if messages else ""
+        if chunk_text in sys_text:
+            return ["Student outcomes were significantly reduced during COVID-19."]
+        return [FALLBACK_GROUNDING_MESSAGE]
+
+    fake_client = RecordingChatClient(
+        rewrite_output=dynamic_llm,
+        stream_tokens=stream_handler,
+    )
+
+    app.dependency_overrides[get_chroma_client] = lambda: chroma_client
+    app.dependency_overrides[get_embedding_function] = lambda: embedder
+    app.dependency_overrides[get_chat_llm_client] = lambda: fake_client
+
+    try:
+        # =========================================================================
+        # Test 1: Broad query "covid-19"
+        # =========================================================================
+        embedder.queries_received.clear()
+        res_broad = auth_client.post(
+            "/api/chat",
+            json={
+                "doc_hash": doc_hash,
+                "message": "covid-19",
+                "history": [],
+            },
+        )
+        assert res_broad.status_code == 200
+
+        # Assert rewriter output contains paper-scope term ("student outcomes")
+        # and fake retrieval received that contextualised query
+        assert any("student outcomes" in q.lower() for q in embedder.queries_received)
+
+        # =========================================================================
+        # Test 2: Retrieval grounding: matching fake chunks passed into answer prompt
+        # =========================================================================
+        assert len(fake_client.stream_calls) >= 1
+        answer_call_broad = fake_client.stream_calls[0]
+        broad_messages = answer_call_broad["messages"]
+        system_prompt_broad = broad_messages[0]["content"]
+        assert chunk_text in system_prompt_broad
+
+        # Streamed answer must be grounded on the retrieved chunk
+        events_broad = parse_sse_events(res_broad.text)
+        token_events = [e for e in events_broad if e["event"] == "token"]
+        streamed_text = "".join(e["data"]["text"] for e in token_events)
+        assert "Student outcomes were significantly reduced" in streamed_text
+
+        # =========================================================================
+        # Test 3: Off-topic safety: "how to bake a cake" gets no paper terms + fallback
+        # =========================================================================
+        embedder.queries_received.clear()
+        res_offtopic = auth_client.post(
+            "/api/chat",
+            json={
+                "doc_hash": doc_hash,
+                "message": "how to bake a cake",
+                "history": [],
+            },
+        )
+        assert res_offtopic.status_code == 200
+
+        # Rewriter query must have NO paper-specific terms added
+        cake_queries = [q for q in embedder.queries_received if "cake" in q.lower()]
+        assert len(cake_queries) > 0
+        for q in cake_queries:
+            assert "covid" not in q.lower()
+            assert "student" not in q.lower()
+            assert "outcome" not in q.lower()
+
+        # Off-topic answer must be strictly the fallback sentence
+        events_offtopic = parse_sse_events(res_offtopic.text)
+        offtopic_tokens = [e for e in events_offtopic if e["event"] == "token"]
+        offtopic_answer = "".join(e["data"]["text"] for e in offtopic_tokens)
+        assert offtopic_answer == FALLBACK_GROUNDING_MESSAGE
+
+        # =========================================================================
+        # Test 4: Original question untouched in answer prompt
+        # =========================================================================
+        assert len(fake_client.stream_calls) >= 2
+        # First call answer prompt must contain raw user string "covid-19"
+        broad_user_msg = broad_messages[-1]["content"]
+        assert broad_user_msg == "Question: covid-19"
+        assert "Question: covid-19" in broad_user_msg
+        assert "COVID-19 student outcomes impact" not in broad_user_msg
+
+        # Second call answer prompt must contain raw user string "how to bake a cake"
+        answer_call_cake = fake_client.stream_calls[1]
+        cake_user_msg = answer_call_cake["messages"][-1]["content"]
+        assert cake_user_msg == "Question: how to bake a cake"
+
+    finally:
+        app.dependency_overrides.clear()

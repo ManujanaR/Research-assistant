@@ -114,10 +114,19 @@ async def chat(
                 logger.debug("Silently ignored metadata sync failure: %s", exc)
 
     # Step 3: Single structured classifier and query rewriter call
+    scope = get_title_authors_abstract(request.doc_hash)
+    if not scope:
+        t = metadata_dict.get("title") or ""
+        a = metadata_dict.get("authors") or ""
+        if t or a:
+            scope = f"{t} by {a}".strip()
+    scope = (scope or "").strip()[:1000]
+
     classification = await classify_and_rewrite(
         message=request.message,
         history=request.history,
         client=llm_client,
+        scope=scope,
     )
 
     # Step 4: Intent routing

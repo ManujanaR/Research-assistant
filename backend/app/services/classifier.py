@@ -23,7 +23,7 @@ Analyze the user's latest message in the context of the conversation and classif
 Rules:
 - Mixed Messages: Any message containing both conversational filler and a question (e.g., "thanks, and what about the sample?") MUST be classified as "document_question".
 - Query Rewriting:
-  * If the intent is "document_question", the "query" field MUST contain a standalone search query (under 20 words) for retrieving relevant passages from the paper. Resolve pronouns (such as "it", "that", "the first one") using the conversation history, and expand casual wording into technical academic terms. Correct spelling mistakes, capitalisation differences, and phonetic variants of technical terms, author names, and framework names. Use the conversation and the paper’s metadata to decide the intended term. Output the corrected term in the search query. Output the search query in the paper’s own spelling of names and terms, regardless of the user’s capitalisation.
+  * If the intent is "document_question", the "query" field MUST contain a standalone search query (under 20 words) for retrieving relevant passages from the paper. Resolve pronouns (such as "it", "that", "the first one") using the conversation history, and expand casual wording into technical academic terms. Correct spelling mistakes, capitalisation differences, and phonetic variants of technical terms, author names, and framework names. Use the conversation and the paper’s metadata to decide the intended term. Output the corrected term in the search query. Output the search query in the paper’s own spelling of names and terms, regardless of the user’s capitalisation. For a broad or underspecified question, write the search query around how the paper’s scope addresses that topic, such as its findings, measured effects, or context. Do not write a general encyclopaedic definition. If the question has no connection to the paper’s scope, keep the query as close to the question’s own words as possible, and do not add paper-specific terms.
   * If the intent is NOT "document_question", the "query" field MUST be strictly an empty string ("").
 
 Output strictly a JSON object conforming to:
@@ -45,6 +45,8 @@ async def classify_and_rewrite(
     history: list[ChatMessage],
     client: Any,
     timeout_seconds: float = CLASSIFIER_TIMEOUT_SECONDS,
+    scope: str = "",
+    **kwargs: Any,
 ) -> ClassifierResult:
     """Classify user message intent and rewrite search query in a single structured call.
 
@@ -56,9 +58,22 @@ async def classify_and_rewrite(
     settings = get_settings()
 
     try:
-        messages: list[dict[str, str]] = [
-            {"role": "system", "content": CLASSIFIER_SYSTEM_PROMPT}
-        ]
+        scope_val = (
+            scope
+            or kwargs.get("paper_scope")
+            or kwargs.get("title_authors_abstract")
+            or ""
+        )
+        scope_text = str(scope_val).strip()[:1000] if scope_val else ""
+
+        system_prompt = CLASSIFIER_SYSTEM_PROMPT
+        if scope_text:
+            system_prompt = (
+                f"{CLASSIFIER_SYSTEM_PROMPT}\n\n"
+                f"Paper Scope (Title & Abstract):\n{scope_text}"
+            )
+
+        messages: list[dict[str, str]] = [{"role": "system", "content": system_prompt}]
 
         # Strictly the last 3 conversation turns (up to 6 messages: user + assistant)
         recent_history = history[-6:] if history else []

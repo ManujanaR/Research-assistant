@@ -13,6 +13,8 @@ REWRITE_INSTRUCTION = (
     "Correct spelling mistakes, capitalisation differences, and phonetic variants of technical terms, author names, and framework names. "
     "Use the conversation and the paper’s metadata to decide the intended term. Output the corrected term in the search query. "
     "Output the search query in the paper’s own spelling of names and terms, regardless of the user’s capitalisation. "
+    "For a broad or underspecified question, write the search query around how the paper’s scope addresses that topic, such as its findings, measured effects, or context. "
+    "Do not write a general encyclopaedic definition. If the question has no connection to the paper’s scope, keep the query as close to the question’s own words as possible, and do not add paper-specific terms. "
     "Output only the query, under 20 words. Do not answer the question."
 )
 
@@ -21,17 +23,43 @@ async def rewrite_query(
     question: str,
     history: list[ChatMessage],
     client: Any,
+    scope: str = "",
+    **kwargs: Any,
 ) -> str:
     """Rewrite conversational or follow-up question into a standalone academic search query.
 
-    Uses REWRITE_MODEL with the last REWRITE_HISTORY_TURNS turns of conversation history.
+    Uses REWRITE_MODEL with the last REWRITE_HISTORY_TURNS turns of conversation history
+    and contextualises broad questions using the paper's scope (title & abstract), capped at 1,000 chars.
     Falls back gracefully to the original question on any failure without exposing question text in logs.
     """
     settings = get_settings()
 
     try:
+        scope_val = (
+            scope
+            or kwargs.get("paper_scope")
+            or kwargs.get("title_authors_abstract")
+            or ""
+        )
+        if not scope_val and "doc_hash" in kwargs and kwargs["doc_hash"]:
+            try:
+                from app.services.qa import get_title_authors_abstract
+
+                scope_val = get_title_authors_abstract(str(kwargs["doc_hash"]))
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("Failed to resolve scope from doc_hash: %s", exc)
+
+        scope_text = str(scope_val).strip()[:1000] if scope_val else ""
+
+        system_instruction = REWRITE_INSTRUCTION
+        if scope_text:
+            system_instruction = (
+                f"{REWRITE_INSTRUCTION}\n\n"
+                f"Paper Scope (Title & Abstract):\n{scope_text}"
+            )
+
         messages: list[dict[str, str]] = [
-            {"role": "system", "content": REWRITE_INSTRUCTION}
+            {"role": "system", "content": system_instruction}
         ]
 
         turns = max(1, int(settings.rewrite_history_turns))
