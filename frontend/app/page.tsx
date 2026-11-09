@@ -8,6 +8,8 @@ import { SourcePanel } from "@/components/SourcePanel";
 import { StudioPanel } from "@/components/StudioPanel";
 import { ChatPanel } from "@/components/ChatPanel";
 import { ExportButton } from "@/components/ExportButton";
+import { HelpButton } from "@/components/HelpButton";
+import { HelpPanel } from "@/components/HelpPanel";
 import {
   ApiError,
   ExportMessage,
@@ -42,6 +44,8 @@ export default function Home() {
   const [isSummaryLoading, setIsSummaryLoading] = useState(false);
   const [summaryError, setSummaryError] = useState<string | null>(null);
   const [messages] = useState<ExportMessage[]>([]);
+  const [isHelpOpen, setIsHelpOpen] = useState(false);
+  const helpButtonRef = useRef<HTMLButtonElement | null>(null);
 
   // Desktop summary panel adjustable width (default 380px, min 280px, max 700px)
   const [summaryWidth, setSummaryWidth] = useState(380);
@@ -193,7 +197,21 @@ export default function Home() {
 
   // 2. Unauthenticated: AuthPanel
   if (!currentUser) {
-    return <AuthPanel onSuccess={handleAuthSuccess} />;
+    return (
+      <>
+        <HelpButton
+          ref={helpButtonRef}
+          isOpen={isHelpOpen}
+          onClick={() => setIsHelpOpen((prev) => !prev)}
+        />
+        <AuthPanel onSuccess={handleAuthSuccess} />
+        <HelpPanel
+          isOpen={isHelpOpen}
+          onClose={() => setIsHelpOpen(false)}
+          triggerRef={helpButtonRef}
+        />
+      </>
+    );
   }
 
   // 3. Authenticated: Workspace
@@ -208,6 +226,12 @@ export default function Home() {
       <ExportButton
         docHash={summary ? uploadResult?.doc_hash : null}
         messages={messages.slice(-200)}
+      />
+
+      <HelpButton
+        ref={helpButtonRef}
+        isOpen={isHelpOpen}
+        onClick={() => setIsHelpOpen((prev) => !prev)}
       />
 
       {/* Desktop: Three columns (hidden on phone/tablet, flex on lg and above) */}
@@ -324,6 +348,12 @@ export default function Home() {
           })}
         </nav>
       </div>
+
+      <HelpPanel
+        isOpen={isHelpOpen}
+        onClose={() => setIsHelpOpen(false)}
+        triggerRef={helpButtonRef}
+      />
     </div>
   );
 }

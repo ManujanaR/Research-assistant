@@ -24,6 +24,8 @@ import { CredibilityCard } from "./CredibilityCard";
 import { ProfileMenu } from "./ProfileMenu";
 import { ProfileForm } from "./ProfileForm";
 import { ChangePasswordForm } from "./ChangePasswordForm";
+import { HelpButton } from "./HelpButton";
+import { HelpPanel } from "./HelpPanel";
 import Home from "@/app/page";
 import {
   ApiError,
@@ -1712,6 +1714,163 @@ describe("Frontend UI Components", () => {
       const badge = screen.getByTestId("credibility-badge");
       expect(badge.textContent).toBe("Indexed in OpenAlex");
       expect(badge.className).toContain("text-emerald-700");
+    });
+  });
+
+  describe("HelpButton and HelpPanel", () => {
+    function HelpTestWrapper() {
+      const [isOpen, setIsOpen] = React.useState(false);
+      const btnRef = React.useRef<HTMLButtonElement | null>(null);
+
+      return (
+        <div>
+          <HelpButton
+            ref={btnRef}
+            isOpen={isOpen}
+            onClick={() => setIsOpen((prev) => !prev)}
+          />
+          <HelpPanel
+            isOpen={isOpen}
+            onClose={() => setIsOpen(false)}
+            triggerRef={btnRef}
+          />
+        </div>
+      );
+    }
+
+    it("renders HelpButton with accessible name 'Help' and dynamic aria-expanded", () => {
+      render(<HelpTestWrapper />);
+      const btn = screen.getByRole("button", { name: "Help" });
+      expect(btn).toBeDefined();
+      expect(btn.getAttribute("aria-expanded")).toBe("false");
+
+      fireEvent.click(btn);
+      expect(btn.getAttribute("aria-expanded")).toBe("true");
+
+      const closeBtn = screen.getByTestId("help-panel-close-btn");
+      fireEvent.click(closeBtn);
+      expect(btn.getAttribute("aria-expanded")).toBe("false");
+    });
+
+    it("renders HelpPanel with accessible dialog semantics, aria-modal='true', and title 'How to use Mitra'", () => {
+      render(<HelpTestWrapper />);
+      const helpBtn = screen.getByRole("button", { name: "Help" });
+      fireEvent.click(helpBtn);
+
+      const dialog = screen.getByRole("dialog");
+      expect(dialog).toBeDefined();
+      expect(dialog.getAttribute("aria-modal")).toBe("true");
+      expect(dialog.getAttribute("aria-labelledby")).toBe("help-panel-title");
+
+      const title = screen.getByRole("heading", { name: "How to use Mitra" });
+      expect(title).toBeDefined();
+      expect(title.id).toBe("help-panel-title");
+    });
+
+    it("renders all seven section headings in exact sequence", () => {
+      render(<HelpTestWrapper />);
+      fireEvent.click(screen.getByRole("button", { name: "Help" }));
+
+      const expectedHeadings = [
+        "Getting started",
+        "Reading the summary",
+        "Asking questions",
+        "Citations",
+        "Exporting",
+        "Account",
+        "Limits",
+      ];
+
+      const headings = screen
+        .getAllByRole("heading")
+        .filter((h) => h.id !== "help-panel-title")
+        .map((h) => h.textContent?.trim());
+
+      expect(headings).toEqual(expectedHeadings);
+    });
+
+    it("contains exact required substrings: '20 MB', '2000 characters', 'one paper'", () => {
+      render(<HelpTestWrapper />);
+      fireEvent.click(screen.getByRole("button", { name: "Help" }));
+
+      const dialog = screen.getByRole("dialog");
+      const dialogText = dialog.textContent || "";
+
+      expect(dialogText).toContain("20 MB");
+      expect(dialogText).toContain("2000 characters");
+      expect(dialogText).toContain("one paper");
+    });
+
+    it("closes on Escape key press and restores focus to Help button", async () => {
+      render(<HelpTestWrapper />);
+      const helpBtn = screen.getByRole("button", { name: "Help" });
+      helpBtn.focus();
+      expect(document.activeElement).toBe(helpBtn);
+
+      fireEvent.click(helpBtn);
+      expect(screen.getByRole("dialog")).toBeDefined();
+
+      fireEvent.keyDown(window, { key: "Escape", code: "Escape" });
+
+      await waitFor(() => {
+        expect(screen.queryByRole("dialog")).toBeNull();
+      });
+      expect(document.activeElement).toBe(helpBtn);
+    });
+
+    it("closes on backdrop click and restores focus to Help button", async () => {
+      render(<HelpTestWrapper />);
+      const helpBtn = screen.getByRole("button", { name: "Help" });
+      helpBtn.focus();
+
+      fireEvent.click(helpBtn);
+      expect(screen.getByRole("dialog")).toBeDefined();
+
+      const backdrop = screen.getByTestId("help-panel-backdrop");
+      fireEvent.click(backdrop);
+
+      await waitFor(() => {
+        expect(screen.queryByRole("dialog")).toBeNull();
+      });
+      expect(document.activeElement).toBe(helpBtn);
+    });
+
+    it("traps focus with Tab and Shift+Tab while open", () => {
+      render(<HelpTestWrapper />);
+      const helpBtn = screen.getByRole("button", { name: "Help" });
+      fireEvent.click(helpBtn);
+
+      const dialog = screen.getByRole("dialog");
+      const closeBtn = screen.getByTestId("help-panel-close-btn");
+
+      // With only closeBtn focusable in this dialog, Tab wraps to closeBtn
+      closeBtn.focus();
+      expect(document.activeElement).toBe(closeBtn);
+
+      fireEvent.keyDown(dialog, { key: "Tab" });
+      expect(document.activeElement).toBe(closeBtn);
+
+      fireEvent.keyDown(dialog, { key: "Tab", shiftKey: true });
+      expect(document.activeElement).toBe(closeBtn);
+    });
+
+    it("uses pure responsive Tailwind classes for bottom sheet and desktop drawer", () => {
+      render(<HelpTestWrapper />);
+      fireEvent.click(screen.getByRole("button", { name: "Help" }));
+
+      const dialog = screen.getByRole("dialog");
+      const className = dialog.className;
+
+      // Bottom sheet classes for mobile
+      expect(className).toContain("bottom-0");
+      expect(className).toContain("inset-x-0");
+      expect(className).toContain("rounded-t-2xl");
+
+      // Desktop drawer classes for lg:
+      expect(className).toContain("lg:inset-y-0");
+      expect(className).toContain("lg:right-0");
+      expect(className).toContain("lg:w-[440px]");
+      expect(className).toContain("lg:rounded-none");
     });
   });
 });
