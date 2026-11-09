@@ -63,6 +63,7 @@ class RetrievedChunk:
     text: str
     page: int
     distance: float
+    id: str = ""
 
 
 class EmbeddingDimensionMismatchError(ValueError):
@@ -724,7 +725,8 @@ async def retrieve(
     if clamped_k <= 0:
         return []
 
-    query_embeddings = await embed_fn([query])
+    normalized_query = query.strip().lower()
+    query_embeddings = await embed_fn([normalized_query])
     query_dim = len(query_embeddings[0]) if query_embeddings else 0
 
     coll_meta = collection.metadata or {}
@@ -747,14 +749,20 @@ async def retrieve(
         if query_result.get("distances")
         else [0.0] * len(docs)
     )
+    ids = (
+        query_result.get("ids", [[]])[0]
+        if query_result.get("ids")
+        else [""] * len(docs)
+    )
 
-    for doc_text, meta, dist in zip(docs, metas, distances, strict=False):
+    for doc_id, doc_text, meta, dist in zip(ids, docs, metas, distances, strict=False):
         page_num = int(meta.get("page", 1)) if meta else 1
         retrieved.append(
             RetrievedChunk(
                 text=str(doc_text),
                 page=page_num,
                 distance=float(dist),
+                id=str(doc_id),
             )
         )
 

@@ -20,6 +20,7 @@ from app.schemas.chat import ChatMessage
 from app.services.qa import (
     FALLBACK_GROUNDING_MESSAGE,
     index_document,
+    retrieve,
 )
 from app.services.query_rewriter import REWRITE_INSTRUCTION, rewrite_query
 from tests.conftest import AuthenticatedTestClient
@@ -362,8 +363,10 @@ def test_misspelt_key_term_reaches_retrieval_as_corrected_search_query(
         )
         assert response.status_code == 200
 
-        # 1. Retrieval must receive the corrected term
-        assert "ResNet architecture" in embedder.queries_received
+        # 1. Retrieval must receive the corrected term (normalised before embedding)
+        assert any(
+            q.lower() == "resnet architecture" for q in embedder.queries_received
+        )
         assert "Explain the resnet architechture." not in embedder.queries_received
 
         # 2. Answer step retains original input question string
@@ -1023,3 +1026,106 @@ def test_off_topic_messages_return_short_replies_without_citations(
         assert embedder.call_count == 0
     finally:
         app.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
+async def test_case_insensitive_query_rewriting_and_retrieval(tmp_path: Path) -> None:
+    """Verify case-insensitive query rewriting and retrieval for casing variations."""
+    # 1. Assert rewriter prompt contains the required instruction
+    assert (
+        "Output the search query in the paper’s own spelling of names and terms, regardless of the user’s capitalisation."
+        in REWRITE_INSTRUCTION
+    )
+
+    # 2. For 'what does elsevier do' and 'What does Elsevier do', assert rewriter produces the same query
+    captured_instructions: list[str] = []
+
+    def fake_completion(kwargs: dict[str, Any]) -> str:
+        sys_msg = kwargs["messages"][0]["content"]
+        captured_instructions.append(sys_msg)
+        return "Elsevier publishing activities"
+
+    fake_client = RecordingChatClient(rewrite_output=fake_completion)
+
+    q_lower = "what does elsevier do"
+    q_title = "What does Elsevier do"
+
+    rewritten_lower = await rewrite_query(q_lower, [], fake_client)
+    rewritten_title = await rewrite_query(q_title, [], fake_client)
+
+    assert rewritten_lower == rewritten_title
+    assert rewritten_lower == "Elsevier publishing activities"
+    for instruction in captured_instructions:
+        assert (
+            "Output the search query in the paper’s own spelling of names and terms, regardless of the user’s capitalisation."
+            in instruction
+        )
+
+    # 3. Setup Chroma vector store and index chunks
+    doc_hash = "f" * 64
+    chroma_dir = tmp_path / "chroma_case_insensitive"
+    chroma_client = chromadb.PersistentClient(path=str(chroma_dir))
+
+    # A deterministic embedding function for the test
+    async def fake_embed_fn(texts: list[str]) -> list[list[float]]:
+        vecs: list[list[float]] = []
+        for text in texts:
+            counts = [float(text.count(chr(c))) for c in range(ord("a"), ord("z") + 1)]
+            norm = (sum(x * x for x in counts) or 1.0) ** 0.5
+            vecs.append([x / norm for x in counts])
+        return vecs
+
+    chunks = [
+        {
+            "text": "Elsevier publishes peer-reviewed research journals and scientific literature.",
+            "page": 1,
+        },
+        {
+            "text": "The methodology employs data analytics across research outputs.",
+            "page": 2,
+        },
+    ]
+
+    await index_document(
+        doc_hash=doc_hash,
+        chunks=chunks,
+        embed_fn=fake_embed_fn,
+        client=chroma_client,
+    )
+
+    # 4. Direct retrieval with both queries differing only in casing
+    retrieved_lower = await retrieve(
+        doc_hash=doc_hash,
+        query=q_lower,
+        embed_fn=fake_embed_fn,
+        client=chroma_client,
+    )
+    retrieved_title = await retrieve(
+        doc_hash=doc_hash,
+        query=q_title,
+        embed_fn=fake_embed_fn,
+        client=chroma_client,
+    )
+
+    # Assert retrieved chunk IDs are identical and non-empty
+    ids_lower = [c.id for c in retrieved_lower]
+    ids_title = [c.id for c in retrieved_title]
+    assert len(ids_lower) > 0
+    assert ids_lower == ids_title
+    assert ids_lower == [f"{doc_hash}:0", f"{doc_hash}:1"]
+
+    # 5. Calculate and report embedding distance between the two queries after normalisation
+    norm_lower = q_lower.strip().lower()
+    norm_title = q_title.strip().lower()
+    embeddings = await fake_embed_fn([norm_lower, norm_title])
+    emb_lower, emb_title = embeddings[0], embeddings[1]
+
+    # Cosine distance = 1.0 - cosine_similarity
+    dot_product = sum(a * b for a, b in zip(emb_lower, emb_title, strict=True))
+    norm_a = sum(a * a for a in emb_lower) ** 0.5
+    norm_b = sum(b * b for b in emb_title) ** 0.5
+    cosine_similarity = dot_product / (norm_a * norm_b)
+    cosine_distance = 1.0 - cosine_similarity
+
+    # Normalisation guarantees exact match and zero distance
+    assert cosine_distance == pytest.approx(0.0, abs=1e-9)

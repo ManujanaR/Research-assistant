@@ -12,6 +12,7 @@ REWRITE_INSTRUCTION = (
     "Expand casual wording into the technical terms a research paper would use. "
     "Correct spelling mistakes, capitalisation differences, and phonetic variants of technical terms, author names, and framework names. "
     "Use the conversation and the paper’s metadata to decide the intended term. Output the corrected term in the search query. "
+    "Output the search query in the paper’s own spelling of names and terms, regardless of the user’s capitalisation. "
     "Output only the query, under 20 words. Do not answer the question."
 )
 
