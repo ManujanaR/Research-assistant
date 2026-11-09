@@ -10,6 +10,8 @@ REWRITE_INSTRUCTION = (
     "Rewrite the user’s latest message as a standalone search query for finding passages in the paper. "
     "Resolve pronouns such as ‘it’, ‘the first one’, and ‘that’ using the conversation. "
     "Expand casual wording into the technical terms a research paper would use. "
+    "Correct spelling mistakes, capitalisation differences, and phonetic variants of technical terms, author names, and framework names. "
+    "Use the conversation and the paper’s metadata to decide the intended term. Output the corrected term in the search query. "
     "Output only the query, under 20 words. Do not answer the question."
 )
 

@@ -159,6 +159,56 @@ def parse_sse_events(body: str) -> list[dict[str, Any]]:
 
 
 @pytest.mark.asyncio
+async def test_rewrite_query_corrects_spelling_variants_and_contains_instruction() -> (
+    None
+):
+    """rewrite_query instructions require correcting spelling mistakes, phonetic variants, and author/framework names."""
+    assert (
+        "Correct spelling mistakes, capitalisation differences, and phonetic variants of technical terms, author names, and framework names."
+        in REWRITE_INSTRUCTION
+    )
+    assert (
+        "Use the conversation and the paper’s metadata to decide the intended term. Output the corrected term in the search query."
+        in REWRITE_INSTRUCTION
+    )
+
+    fake_client = RecordingChatClient(
+        rewrite_output="ResNet architecture convolutional layers"
+    )
+    result = await rewrite_query(
+        question="What is the resnet architechture?",
+        history=[],
+        client=fake_client,
+    )
+    assert result == "ResNet architecture convolutional layers"
+    call = fake_client.rewrite_calls[0]
+    assert REWRITE_INSTRUCTION in call["messages"][0]["content"]
+
+
+@pytest.mark.asyncio
+async def test_rewrite_query_outputs_pure_search_terms_without_direct_answering() -> (
+    None
+):
+    """Rewriter strictly outputs standalone search queries under 20 words without answering conversational queries."""
+    assert (
+        "Output only the query, under 20 words. Do not answer the question."
+        in REWRITE_INSTRUCTION
+    )
+
+    fake_client = RecordingChatClient(
+        rewrite_output="attention mechanism Vaswani transformer"
+    )
+    result = await rewrite_query(
+        question="Who is Vaswani and how does attention work?",
+        history=[],
+        client=fake_client,
+    )
+    assert result == "attention mechanism Vaswani transformer"
+    assert not result.startswith("Vaswani is")
+    assert len(result.split()) < 20
+
+
+@pytest.mark.asyncio
 async def test_rewrite_query_unit_success() -> None:
     """rewrite_query constructs prompt with history turns, temperature 0, and max_tokens 40."""
     fake_client = RecordingChatClient(
@@ -264,6 +314,63 @@ def test_followup_question_sends_rewritten_to_retrieval_and_original_to_answer(
         user_message_content = answer_messages[-1]["content"]
         assert "Question: How was it trained?" in user_message_content
         assert "deep neural networks training methodology" not in user_message_content
+
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_misspelt_key_term_reaches_retrieval_as_corrected_search_query(
+    auth_client: AuthenticatedTestClient, tmp_path: Path
+) -> None:
+    """A misspelt key term in the user's question reaches retrieval as the corrected term, while original question is preserved."""
+    doc_hash = "c" * 64
+    chroma_dir = tmp_path / "chroma_test"
+    chroma_client = chromadb.PersistentClient(path=str(chroma_dir))
+    embedder = RecordingEmbedder()
+
+    asyncio.run(
+        index_document(
+            doc_hash=doc_hash,
+            chunks=[
+                {"text": "ResNet architecture uses residual connections.", "page": 1}
+            ],
+            embed_fn=embedder,
+            client=chroma_client,
+        )
+    )
+    auth_client.record_ownership(doc_hash)
+
+    fake_client = RecordingChatClient(
+        rewrite_output={"intent": "document_question", "query": "ResNet architecture"},
+        stream_tokens=[
+            "The ResNet architecture uses skip connections to train deep networks."
+        ],
+    )
+
+    app.dependency_overrides[get_chroma_client] = lambda: chroma_client
+    app.dependency_overrides[get_embedding_function] = lambda: embedder
+    app.dependency_overrides[get_chat_llm_client] = lambda: fake_client
+
+    try:
+        response = auth_client.post(
+            "/api/chat",
+            json={
+                "doc_hash": doc_hash,
+                "message": "Explain the resnet architechture.",
+                "history": [],
+            },
+        )
+        assert response.status_code == 200
+
+        # 1. Retrieval must receive the corrected term
+        assert "ResNet architecture" in embedder.queries_received
+        assert "Explain the resnet architechture." not in embedder.queries_received
+
+        # 2. Answer step retains original input question string
+        assert len(fake_client.stream_calls) == 1
+        user_message_content = fake_client.stream_calls[0]["messages"][-1]["content"]
+        assert "Question: Explain the resnet architechture." in user_message_content
+        assert "ResNet architecture" not in user_message_content.split("Question: ")[1]
 
     finally:
         app.dependency_overrides.clear()

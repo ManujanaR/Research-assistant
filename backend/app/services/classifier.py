@@ -23,7 +23,7 @@ Analyze the user's latest message in the context of the conversation and classif
 Rules:
 - Mixed Messages: Any message containing both conversational filler and a question (e.g., "thanks, and what about the sample?") MUST be classified as "document_question".
 - Query Rewriting:
-  * If the intent is "document_question", the "query" field MUST contain a standalone search query (under 20 words) for retrieving relevant passages from the paper. Resolve pronouns (such as "it", "that", "the first one") using the conversation history, and expand casual wording into technical academic terms.
+  * If the intent is "document_question", the "query" field MUST contain a standalone search query (under 20 words) for retrieving relevant passages from the paper. Resolve pronouns (such as "it", "that", "the first one") using the conversation history, and expand casual wording into technical academic terms. Correct spelling mistakes, capitalisation differences, and phonetic variants of technical terms, author names, and framework names. Use the conversation and the paper’s metadata to decide the intended term. Output the corrected term in the search query.
   * If the intent is NOT "document_question", the "query" field MUST be strictly an empty string ("").
 
 Output strictly a JSON object conforming to:
