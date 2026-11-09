@@ -261,3 +261,12 @@ Errors appear inline above the button, with an icon and text. Colour is not the 
 - An avatar with initials from the display name, or from the email if no name is set.
 - The menu shows the name and email, then "Edit profile", "Change password", and "Sign out".
 - Closes on Escape and outside click, returns focus to the avatar.
+
+### 4.12 Help button and panel
+
+- An icon button in the top bar labelled “Help”, immediately left of the theme toggle.
+- A single responsive panel: a right-side drawer from the lg breakpoint (1024px) upward, and a bottom sheet below it. Use Tailwind classes only, with no viewport checks in JavaScript.
+- Titled “How to use Mitra”.
+- Seven ordered sections: Getting started, Reading the summary, Asking questions, Citations, Exporting, Account, Limits.
+- Closes with Escape, the close button, or a backdrop click, and returns focus to the Help button.
+
