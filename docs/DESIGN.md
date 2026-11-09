@@ -105,22 +105,16 @@ Default theme: light.
 
 * **Header:** Title "Sources" with a collapse icon (`PanelLeftClose`).
 
-* **Source Actions:**
+* **Upload Control:**
+  * A single drop zone is the only upload control. It accepts a click, a drag and drop, or Enter/Space when focused.
+  * Its label is “Click to upload or drag and drop”, with the caption “PDF documents only (up to 20MB)”.
+  * After a paper is uploaded, the drop zone becomes a compact row showing the filename and an “Upload another paper” link.
+  * The “+ Add PDF Document” button is removed from the Source panel.
 
-  * Full-width `+ Research new source` primary button.(One document per session. Upload replaces the current paper).
-
-* **Empty State:**
-
-  * Illustration / Icon (`FileTextOutline`).
-
-  * Text: *"Uploaded sources will appear here."*
-
-  * Drag & Drop zone: Drag-and-drop file listener overlay.
-
-  * Below the upload zone (shown only before a paper is uploaded):
-    * A secondary button labelled “Convert other files”.
-    * A caption under it: “Opens iLovePDF in a new tab. Your file is sent to iLovePDF, not to Mitra.”
-    * The button opens https://www.ilovepdf.com with target="_blank" and rel="noopener noreferrer".
+* **Below the upload zone (shown only before a paper is uploaded):**
+  * A secondary button labelled “Convert other files”.
+  * A caption under it: “Opens iLovePDF in a new tab. Your file is sent to iLovePDF, not to Mitra.”
+  * The button opens https://www.ilovepdf.com with target="_blank" and rel="noopener noreferrer".
 
 ### 4.3 Center Workspace & Chat (Center Column)
 
@@ -164,7 +158,7 @@ Default theme: light.
 
 ### 4.6 Document Credibility & Reporting Signals Card (Left Column)
 
-* **Layout Placement:** Located in the **Left Sidebar ("Sources" panel), positioned directly below the "+ Add PDF Document" button and uploaded document item** (above "Convert other files"). The right sidebar remains dedicated exclusively to the five-part Summary.
+* **Layout Placement:** Located in the **Left Sidebar ("Sources" panel), positioned directly below the uploaded document item** (above "Convert other files"). The right sidebar remains dedicated exclusively to the five-part Summary.
 * **Primary Display:** A clean 5-row visual signal checklist (Venue/Host, Citations, References, Affiliations, Structure) with clear status badges based on OpenAlex indexing and reporting scores:
   * **Score >= 75:** `"Indexed in OpenAlex"` (Green badge)
   * **Score 55–74:** `"Preprint Series"` (Yellow badge)
