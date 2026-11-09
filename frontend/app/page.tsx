@@ -8,6 +8,8 @@ import { SourcePanel } from "@/components/SourcePanel";
 import { StudioPanel } from "@/components/StudioPanel";
 import { ChatPanel } from "@/components/ChatPanel";
 import { ExportButton } from "@/components/ExportButton";
+import { ViewPdfButton } from "@/components/ViewPdfButton";
+import { PdfViewerDrawer } from "@/components/PdfViewerDrawer";
 import { HelpButton } from "@/components/HelpButton";
 import { HelpPanel } from "@/components/HelpPanel";
 import {
@@ -46,6 +48,10 @@ export default function Home() {
   const [messages] = useState<ExportMessage[]>([]);
   const [isHelpOpen, setIsHelpOpen] = useState(false);
   const helpButtonRef = useRef<HTMLButtonElement | null>(null);
+  const [pdfBlobUrl, setPdfBlobUrl] = useState<string | null>(null);
+  const [isPdfViewerOpen, setIsPdfViewerOpen] = useState(false);
+  const currentBlobUrlRef = useRef<string | null>(null);
+  const viewPdfButtonRef = useRef<HTMLButtonElement | null>(null);
 
   // Desktop summary panel adjustable width (default 380px, min 280px, max 700px)
   const [summaryWidth, setSummaryWidth] = useState(380);
@@ -113,6 +119,44 @@ export default function Home() {
     };
   }, []);
 
+  // Hydration & memory rule: capture file selection in onChange/drop, store blob URL in state,
+  // and revoke previous blob URL safely when a new file is uploaded or session resets.
+  useEffect(() => {
+    const handleFileChange = (e: Event) => {
+      const target = e.target as HTMLInputElement | null;
+      if (target && target.type === "file" && target.files && target.files.length > 0) {
+        const file = target.files[0];
+        if (file && file.type === "application/pdf") {
+          if (currentBlobUrlRef.current) {
+            URL.revokeObjectURL(currentBlobUrlRef.current);
+          }
+          const url = URL.createObjectURL(file);
+          currentBlobUrlRef.current = url;
+          setPdfBlobUrl(url);
+        }
+      }
+    };
+
+    const handleFileDrop = (e: DragEvent) => {
+      const files = e.dataTransfer?.files;
+      if (files && files.length > 0 && files[0].type === "application/pdf") {
+        if (currentBlobUrlRef.current) {
+          URL.revokeObjectURL(currentBlobUrlRef.current);
+        }
+        const url = URL.createObjectURL(files[0]);
+        currentBlobUrlRef.current = url;
+        setPdfBlobUrl(url);
+      }
+    };
+
+    document.addEventListener("change", handleFileChange, true);
+    document.addEventListener("drop", handleFileDrop, true);
+    return () => {
+      document.removeEventListener("change", handleFileChange, true);
+      document.removeEventListener("drop", handleFileDrop, true);
+    };
+  }, []);
+
   const handleUploaded = async (result: UploadResponse) => {
     setUploadResult(result);
     setIsSummaryLoading(true);
@@ -136,6 +180,12 @@ export default function Home() {
   };
 
   const handleReset = () => {
+    if (currentBlobUrlRef.current) {
+      URL.revokeObjectURL(currentBlobUrlRef.current);
+      currentBlobUrlRef.current = null;
+    }
+    setPdfBlobUrl(null);
+    setIsPdfViewerOpen(false);
     setUploadResult(null);
     setSummary(null);
     setSummaryError(null);
@@ -205,7 +255,15 @@ export default function Home() {
           onClick={() => setIsHelpOpen((prev) => !prev)}
         />
         <AuthPanel onSuccess={handleAuthSuccess} />
-        <HelpPanel
+        <PdfViewerDrawer
+        isOpen={isPdfViewerOpen}
+        onClose={() => setIsPdfViewerOpen(false)}
+        blobUrl={pdfBlobUrl}
+        filename={uploadResult?.filename}
+        triggerRef={viewPdfButtonRef}
+      />
+
+      <HelpPanel
           isOpen={isHelpOpen}
           onClose={() => setIsHelpOpen(false)}
           triggerRef={helpButtonRef}
@@ -226,6 +284,13 @@ export default function Home() {
       <ExportButton
         docHash={summary ? uploadResult?.doc_hash : null}
         messages={messages.slice(-200)}
+      />
+
+      <ViewPdfButton
+        ref={viewPdfButtonRef}
+        hasDocument={Boolean(uploadResult)}
+        isOpen={isPdfViewerOpen}
+        onClick={() => setIsPdfViewerOpen((prev) => !prev)}
       />
 
       <HelpButton
@@ -348,6 +413,14 @@ export default function Home() {
           })}
         </nav>
       </div>
+
+      <PdfViewerDrawer
+        isOpen={isPdfViewerOpen}
+        onClose={() => setIsPdfViewerOpen(false)}
+        blobUrl={pdfBlobUrl}
+        filename={uploadResult?.filename}
+        triggerRef={viewPdfButtonRef}
+      />
 
       <HelpPanel
         isOpen={isHelpOpen}

@@ -26,6 +26,8 @@ import { ProfileForm } from "./ProfileForm";
 import { ChangePasswordForm } from "./ChangePasswordForm";
 import { HelpButton } from "./HelpButton";
 import { HelpPanel } from "./HelpPanel";
+import { ViewPdfButton } from "./ViewPdfButton";
+import { PdfViewerDrawer } from "./PdfViewerDrawer";
 import Home from "@/app/page";
 import {
   ApiError,
@@ -1992,6 +1994,191 @@ describe("Frontend UI Components", () => {
       expect(className).toContain("lg:right-0");
       expect(className).toContain("lg:w-[440px]");
       expect(className).toContain("lg:rounded-none");
+    });
+  });
+
+  describe("PdfViewerDrawer and ViewPdfButton", () => {
+    function PdfViewerHarness({ initialBlob = "blob:http://localhost:3000/sample-paper-uuid" }: { initialBlob?: string | null }) {
+      const [isOpen, setIsOpen] = React.useState(false);
+      const [blobUrl] = React.useState<string | null>(initialBlob);
+      const btnRef = React.useRef<HTMLButtonElement | null>(null);
+
+      return (
+        <div>
+          <ViewPdfButton
+            ref={btnRef}
+            hasDocument={Boolean(blobUrl)}
+            isOpen={isOpen}
+            onClick={() => setIsOpen((prev) => !prev)}
+          />
+          <PdfViewerDrawer
+            isOpen={isOpen}
+            onClose={() => setIsOpen(false)}
+            blobUrl={blobUrl}
+            filename="sample-paper.pdf"
+            triggerRef={btnRef}
+          />
+        </div>
+      );
+    }
+
+    it("ViewPdfButton is hidden with no paper and visible with a paper", () => {
+      // 1. With no paper loaded: button is not rendered
+      const { unmount } = render(
+        <ViewPdfButton hasDocument={false} onClick={vi.fn()} />
+      );
+      expect(screen.queryByRole("button", { name: "View PDF" })).toBeNull();
+      expect(screen.queryByTestId("view-pdf-button")).toBeNull();
+      unmount();
+
+      // 2. With paper loaded: button is rendered with accessible name and tooltip
+      render(<ViewPdfButton hasDocument={true} onClick={vi.fn()} />);
+      const btn = screen.getByRole("button", { name: "View PDF" });
+      expect(btn).toBeDefined();
+      expect(btn.getAttribute("title")).toBe("View PDF");
+      expect(btn.getAttribute("aria-label")).toBe("View PDF");
+    });
+
+    it("The drawer has role=\"dialog\", aria-modal=\"true\", and the correct aria-label", () => {
+      render(
+        <PdfViewerDrawer
+          isOpen={true}
+          onClose={vi.fn()}
+          blobUrl="blob:http://localhost:3000/test.pdf"
+          filename="test.pdf"
+        />
+      );
+
+      const dialog = screen.getByRole("dialog");
+      expect(dialog).toBeDefined();
+      expect(dialog.getAttribute("aria-modal")).toBe("true");
+      expect(dialog.getAttribute("aria-label")).toBe("Original PDF Document");
+    });
+
+    it("Escape, the close button, and a backdrop click each close the drawer", async () => {
+      // 1. Close button
+      const onCloseBtn = vi.fn();
+      const { unmount: unmount1 } = render(
+        <PdfViewerDrawer
+          isOpen={true}
+          onClose={onCloseBtn}
+          blobUrl="blob:http://localhost:3000/test.pdf"
+        />
+      );
+      fireEvent.click(screen.getByTestId("pdf-viewer-close-btn"));
+      expect(onCloseBtn).toHaveBeenCalledTimes(1);
+      unmount1();
+
+      // 2. Backdrop click
+      const onCloseBackdrop = vi.fn();
+      const { unmount: unmount2 } = render(
+        <PdfViewerDrawer
+          isOpen={true}
+          onClose={onCloseBackdrop}
+          blobUrl="blob:http://localhost:3000/test.pdf"
+        />
+      );
+      fireEvent.click(screen.getByTestId("pdf-viewer-backdrop"));
+      expect(onCloseBackdrop).toHaveBeenCalledTimes(1);
+      unmount2();
+
+      // 3. Escape key
+      const onCloseEscape = vi.fn();
+      render(
+        <PdfViewerDrawer
+          isOpen={true}
+          onClose={onCloseEscape}
+          blobUrl="blob:http://localhost:3000/test.pdf"
+        />
+      );
+      fireEvent.keyDown(window, { key: "Escape", code: "Escape" });
+      expect(onCloseEscape).toHaveBeenCalledTimes(1);
+    });
+
+    it("Focus returns to the View PDF button on close", async () => {
+      render(<PdfViewerHarness />);
+
+      const viewBtn = screen.getByRole("button", { name: "View PDF" });
+      viewBtn.focus();
+      expect(document.activeElement).toBe(viewBtn);
+
+      // Open drawer
+      fireEvent.click(viewBtn);
+      expect(screen.getByRole("dialog")).toBeDefined();
+
+      // Close drawer via close button
+      const closeBtn = screen.getByTestId("pdf-viewer-close-btn");
+      fireEvent.click(closeBtn);
+
+      await waitFor(() => {
+        expect(screen.queryByRole("dialog")).toBeNull();
+      });
+      expect(document.activeElement).toBe(viewBtn);
+    });
+
+    it("Mount, unmount, and remount keeps a valid URL and doesn’t show a revoked blob", () => {
+      const revokeSpy = vi.spyOn(URL, "revokeObjectURL");
+      const testBlobUrl = "blob:http://localhost:3000/react-strict-mode-blob-uuid";
+
+      // Initial Mount
+      const { unmount } = render(
+        <PdfViewerDrawer
+          isOpen={true}
+          onClose={vi.fn()}
+          blobUrl={testBlobUrl}
+        />
+      );
+
+      // Unmount (as happens under React Strict Mode or drawer toggle)
+      unmount();
+
+      // URL must NOT be revoked on simple unmount
+      expect(revokeSpy).not.toHaveBeenCalled();
+
+      // Remount
+      render(
+        <PdfViewerDrawer
+          isOpen={true}
+          onClose={vi.fn()}
+          blobUrl={testBlobUrl}
+        />
+      );
+
+      const objectEl = screen.getByRole("dialog").querySelector("object");
+      expect(objectEl).toBeDefined();
+      expect(objectEl?.getAttribute("data")).toBe(testBlobUrl);
+      expect(revokeSpy).not.toHaveBeenCalled();
+
+      revokeSpy.mockRestore();
+    });
+
+    it("The fallback text and “Open in new tab” link are present in the DOM", () => {
+      const testBlobUrl = "blob:http://localhost:3000/document-fallback.pdf";
+      render(
+        <PdfViewerDrawer
+          isOpen={true}
+          onClose={vi.fn()}
+          blobUrl={testBlobUrl}
+        />
+      );
+
+      // Fallback text
+      expect(
+        screen.getByText("Your browser can’t show this PDF inline.")
+      ).toBeDefined();
+
+      // "Open in new tab" link inside the fallback
+      const link = screen.getByRole("link", { name: /open in new tab/i });
+      expect(link).toBeDefined();
+      expect(link.getAttribute("href")).toBe(testBlobUrl);
+      expect(link.getAttribute("target")).toBe("_blank");
+
+      // Privacy statement
+      expect(
+        screen.getByText(
+          "The PDF is shown from memory in your browser. The server keeps only the extracted text and index, as before."
+        )
+      ).toBeDefined();
     });
   });
 });
