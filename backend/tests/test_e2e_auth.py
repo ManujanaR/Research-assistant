@@ -393,12 +393,13 @@ def test_full_flow_across_two_users_isolation_and_signout(auth_env: None) -> Non
     assert chat_b_resp.status_code == 200
 
 
-def test_user_b_uploading_identical_document_does_not_steal_ownership(
+def test_user_b_uploading_identical_document_gets_independent_access(
     auth_env: None,
 ) -> None:
-    """A second user uploading the identical PDF file receives the hash but cannot access the document."""
+    """A second user uploading the identical PDF file receives ownership for their account without affecting User A."""
     client_a = TestClient(app)
     client_b = TestClient(app)
+    client_c = TestClient(app)
 
     # User A registers and signs in
     client_a.post(
@@ -418,6 +419,16 @@ def test_user_b_uploading_identical_document_does_not_steal_ownership(
     client_b.post(
         "/api/auth/signin",
         json={"email": "beta@example.com", "password": "Password123Beta"},
+    )
+
+    # User C registers and signs in (uploads nothing)
+    client_c.post(
+        "/api/auth/signup",
+        json={"email": "gamma@example.com", "password": "Password123Gamma"},
+    )
+    client_c.post(
+        "/api/auth/signin",
+        json={"email": "gamma@example.com", "password": "Password123Gamma"},
     )
 
     # User A uploads a paper
@@ -447,17 +458,27 @@ def test_user_b_uploading_identical_document_does_not_steal_ownership(
         == 200
     )
 
-    # User B cannot access User A's document despite having uploaded the same bytes
+    # User B now has independent access to summary and chat
     b_sum = client_b.post("/api/summary", json={"doc_hash": doc_hash})
-    assert b_sum.status_code == 404
-    assert b_sum.json()["detail"] == "Document not found. Upload the PDF first."
+    assert b_sum.status_code == 200
 
     b_chat = client_b.post(
         "/api/chat",
         json={"doc_hash": doc_hash, "message": "Can I query this?", "history": []},
     )
-    assert b_chat.status_code == 404
-    assert b_chat.json()["detail"] == "Document not found. Upload the PDF first."
+    assert b_chat.status_code == 200
+
+    # User C, who uploaded nothing, cannot access
+    c_sum = client_c.post("/api/summary", json={"doc_hash": doc_hash})
+    assert c_sum.status_code == 404
+    assert c_sum.json()["detail"] == "Document not found. Upload the PDF first."
+
+    c_chat = client_c.post(
+        "/api/chat",
+        json={"doc_hash": doc_hash, "message": "Can I query this?", "history": []},
+    )
+    assert c_chat.status_code == 404
+    assert c_chat.json()["detail"] == "Document not found. Upload the PDF first."
 
 
 def test_unauthenticated_requests_fail_on_all_protected_endpoints(

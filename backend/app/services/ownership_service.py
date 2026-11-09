@@ -38,11 +38,13 @@ def record_owner(
     try:
         existing = (
             session.query(DocumentOwnership)
-            .filter(DocumentOwnership.doc_hash == target_hash)
+            .filter(
+                DocumentOwnership.doc_hash == target_hash,
+                DocumentOwnership.owner_id == target_user_id,
+            )
             .first()
         )
         if existing is not None:
-            # First owner remains recorded; do not transfer ownership
             return existing
 
         ownership = DocumentOwnership(
@@ -68,8 +70,9 @@ def is_owner(
     user_id: str,
     db: Session | None = None,
 ) -> bool:
-    """Check if the user is the recorded owner of the given document hash.
+    """Check if the user is a recorded owner of the given document hash.
 
+    Queries with WHERE doc_hash = :hash AND owner_id = :current_user.
     Supports either (doc_hash, user_id, db=None) or (db, doc_hash, user_id).
     """
     if isinstance(doc_hash, Session):
@@ -90,12 +93,13 @@ def is_owner(
     try:
         existing = (
             session.query(DocumentOwnership)
-            .filter(DocumentOwnership.doc_hash == target_hash)
+            .filter(
+                DocumentOwnership.doc_hash == target_hash,
+                DocumentOwnership.owner_id == target_user_id,
+            )
             .first()
         )
-        if existing is None:
-            return False
-        return existing.owner_id == target_user_id
+        return existing is not None
     finally:
         if should_close:
             session.close()

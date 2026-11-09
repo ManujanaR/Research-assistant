@@ -287,10 +287,10 @@ def test_second_user_gets_404_matching_unknown_hash_exactly(
     )
 
 
-def test_second_user_uploading_same_file_keeps_first_owner(
+def test_second_user_uploading_same_file_gets_own_ownership_row(
     client: TestClient, users: tuple[User, User], test_db: Session
 ) -> None:
-    """Uploading the same file by a second user succeeds, but retains original owner."""
+    """Uploading the same file by a second user grants ownership to user 2 without removing user 1."""
     user1, user2 = users
     pdf_bytes = make_valid_pdf_bytes("Common Shared Paper Content")
 
@@ -311,31 +311,36 @@ def test_second_user_uploading_same_file_keeps_first_owner(
     )
     assert resp2.status_code == 200
     assert resp2.json()["doc_hash"] == doc_hash
+    assert resp2.json()["page_count"] == resp1.json()["page_count"]
 
-    # Ownership remains with user 1 in the database
-    ownership = (
+    # Both user 1 and user 2 have ownership records in the database
+    ownership_rows = (
         test_db.query(DocumentOwnership)
         .filter(DocumentOwnership.doc_hash == doc_hash)
-        .first()
+        .all()
     )
-    assert ownership is not None
-    assert ownership.owner_id == user1.id
+    owner_ids = {row.owner_id for row in ownership_rows}
+    assert owner_ids == {user1.id, user2.id}
     assert is_owner(doc_hash, user1.id, db=test_db) is True
-    assert is_owner(doc_hash, user2.id, db=test_db) is False
+    assert is_owner(doc_hash, user2.id, db=test_db) is True
 
-    # User 2 cannot access summary or chat
-    assert client.post("/api/summary", json={"doc_hash": doc_hash}).status_code == 404
-    assert (
-        client.post(
-            "/api/chat",
-            json={"doc_hash": doc_hash, "message": "hello"},
-        ).status_code
-        == 404
-    )
+    # User 2 can access summary
+    assert client.post("/api/summary", json={"doc_hash": doc_hash}).status_code == 200
 
-    # User 1 can still access summary
+    # User 1 can also access summary
     client.cookies.set("auth_token", create_access_token(user_id=user1.id))
     assert client.post("/api/summary", json={"doc_hash": doc_hash}).status_code == 200
+
+    # A non-uploader (valid third user) gets 404
+    user3 = User(
+        email="third@example.com",
+        password_hash=hash_password("ThirdPassword123"),
+    )
+    test_db.add(user3)
+    test_db.commit()
+    test_db.refresh(user3)
+    client.cookies.set("auth_token", create_access_token(user_id=user3.id))
+    assert client.post("/api/summary", json={"doc_hash": doc_hash}).status_code == 404
 
 
 def test_no_auth_gets_401_on_all_three_routes(client: TestClient) -> None:

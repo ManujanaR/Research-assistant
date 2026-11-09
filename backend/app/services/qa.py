@@ -602,6 +602,8 @@ async def index_document(
     chunks: list[dict[str, Any]],
     embed_fn: EmbedFn,
     client: ClientAPI | None = None,
+    page_count: int | None = None,
+    ocr_used: bool = False,
 ) -> None:
     """Index document chunks into ChromaDB collection.
 
@@ -666,13 +668,18 @@ async def index_document(
     embeddings = await embed_fn(texts)
     embedding_dim = len(embeddings[0]) if embeddings else 0
 
+    meta: dict[str, Any] = {
+        "hnsw:space": "cosine",
+        "embedding_model": settings.embedding_model,
+        "embedding_dim": embedding_dim,
+        "ocr_used": ocr_used,
+    }
+    if page_count is not None:
+        meta["page_count"] = page_count
+
     collection = client.create_collection(
         name=collection_name,
-        metadata={
-            "hnsw:space": "cosine",
-            "embedding_model": settings.embedding_model,
-            "embedding_dim": embedding_dim,
-        },
+        metadata=meta,
     )
     collection.add(
         ids=ids,

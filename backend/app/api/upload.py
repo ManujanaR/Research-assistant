@@ -30,7 +30,12 @@ from app.services.pdf_parser import (
     PdfParseError,
     parse_pdf,
 )
-from app.services.qa import EmbedFn, index_document
+from app.services.qa import (
+    EmbedFn,
+    get_chroma_collection_name,
+    get_document_page_count,
+    index_document,
+)
 from app.services.summary_service import PaperTextStore
 from app.services.upload_validation import validate_and_hash_upload
 
@@ -71,6 +76,55 @@ async def upload_document(
     """Accept, validate, parse, index into ChromaDB, and populate paper text store."""
     doc_hash, filename, size_bytes, file_bytes = await validate_and_hash_upload(file)
 
+    # Step 1: Storage Deduplication Check
+    # If the hash already has a Chroma index and parsed text, reuse them.
+    # Skip re-parsing, re-embedding, and re-summarising.
+    coll_name = get_chroma_collection_name(doc_hash)
+    existing_collection = None
+    try:
+        existing_collection = chroma_client.get_collection(name=coll_name)
+    except Exception:  # noqa: BLE001
+        existing_collection = None
+
+    if existing_collection is not None and existing_collection.count() > 0:
+        existing_text = text_store.get_text(doc_hash)
+        if existing_text:
+            logger.info(
+                "Reusing existing storage for doc_hash=%s; skipping parse and embed",
+                doc_hash,
+            )
+            # Create an ownership row for the uploading account only
+            record_owner(doc_hash, current_user.id, db=db)
+
+            # Ensure credibility record exists
+            cred_record = (
+                db.query(DocumentCredibility)
+                .filter(DocumentCredibility.doc_hash == doc_hash)
+                .first()
+            )
+            if not cred_record:
+                cred_record = DocumentCredibility(
+                    doc_hash=doc_hash, status="processing"
+                )
+                db.add(cred_record)
+                db.commit()
+
+            coll_meta = existing_collection.metadata or {}
+            chunk_count = existing_collection.count()
+            page_count = coll_meta.get("page_count")
+            if not page_count or not isinstance(page_count, int):
+                page_count = get_document_page_count(doc_hash, client=chroma_client)
+            ocr_used = bool(coll_meta.get("ocr_used", False))
+
+            return UploadResponse(
+                doc_hash=doc_hash,
+                filename=filename,
+                size_bytes=size_bytes,
+                page_count=int(page_count),
+                chunk_count=chunk_count,
+                ocr_used=ocr_used,
+            )
+
     with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as temp_file:
         temp_path = temp_file.name
         temp_file.write(file_bytes)
@@ -103,7 +157,12 @@ async def upload_document(
         # Index in ChromaDB
         try:
             await index_document(
-                doc_hash, parsed_doc.chunks, embed_fn, client=chroma_client
+                doc_hash,
+                parsed_doc.chunks,
+                embed_fn,
+                client=chroma_client,
+                page_count=parsed_doc.page_count,
+                ocr_used=parsed_doc.ocr_used,
             )
         except openai.AuthenticationError as exc:
             logger.warning(

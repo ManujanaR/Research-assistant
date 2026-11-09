@@ -64,6 +64,55 @@ def run_migrations(target_engine: Engine | None = None) -> None:
                 logger.info("Migrated: added token_version column to users table.")
             conn.commit()
 
+        if "document_ownership" in table_names:
+            pk_info = inspector.get_pk_constraint("document_ownership")
+            pk_cols = pk_info.get("constrained_columns", [])
+            if "owner_id" not in pk_cols:
+                logger.info(
+                    "Migrating document_ownership to composite primary key (doc_hash, owner_id)..."
+                )
+                conn.execute(
+                    text(
+                        """
+                        CREATE TABLE document_ownership_tmp (
+                            doc_hash VARCHAR(64) NOT NULL,
+                            owner_id VARCHAR(36) NOT NULL,
+                            created_at DATETIME NOT NULL,
+                            PRIMARY KEY (doc_hash, owner_id),
+                            FOREIGN KEY(owner_id) REFERENCES users (id)
+                        )
+                        """
+                    )
+                )
+                conn.execute(
+                    text(
+                        """
+                        INSERT OR IGNORE INTO document_ownership_tmp (doc_hash, owner_id, created_at)
+                        SELECT doc_hash, owner_id, created_at FROM document_ownership
+                        """
+                    )
+                )
+                conn.execute(text("DROP TABLE document_ownership"))
+                conn.execute(
+                    text(
+                        "ALTER TABLE document_ownership_tmp RENAME TO document_ownership"
+                    )
+                )
+                conn.execute(
+                    text(
+                        "CREATE INDEX ix_document_ownership_doc_hash ON document_ownership (doc_hash)"
+                    )
+                )
+                conn.execute(
+                    text(
+                        "CREATE INDEX ix_document_ownership_owner_id ON document_ownership (owner_id)"
+                    )
+                )
+                conn.commit()
+                logger.info(
+                    "Migrated: updated document_ownership to composite primary key."
+                )
+
 
 def init_db(target_engine: Engine | None = None) -> None:
     """Create all database tables on the specified or default engine and run migrations."""
