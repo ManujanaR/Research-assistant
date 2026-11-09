@@ -533,7 +533,7 @@ def test_flexible_token_similarity_and_threshold_boundary() -> None:
     assert badge_71 == "Indexed in OpenAlex"
     assert score_71 >= 50
 
-    score_69, _, badge_69, _ = calculate_credibility_score(
+    _score_69, _, badge_69, _ = calculate_credibility_score(
         external_check="not_matched",
         external_record=None,
         title_similarity=0.69,
@@ -548,6 +548,7 @@ def test_flexible_token_similarity_and_threshold_boundary() -> None:
 def test_extract_title_skips_working_paper_banners() -> None:
     """Verify that extract_title_from_page_1 ignores working paper banners like NBER WORKING PAPER SERIES."""
     from app.services.credibility_service import extract_title_from_page_1
+
     page_1 = """
     NBER WORKING PAPER SERIES
 

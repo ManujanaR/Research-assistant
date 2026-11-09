@@ -137,10 +137,7 @@ async def test_summary_endpoint_rehydration_after_restart(
         response = auth_client.post("/api/summary", json={"doc_hash": doc_hash})
         assert response.status_code == 200
         data = response.json()
-        assert (
-            data["header"]["title"]
-            == VALID_SUMMARY_DICT["header"]["title"]
-        )
+        assert data["header"]["title"] == VALID_SUMMARY_DICT["header"]["title"]
         # Confirm that restart_store now has the text in memory
         assert doc_hash in restart_store._store
     finally:

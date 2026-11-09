@@ -227,10 +227,7 @@ def test_owner_can_upload_summarise_and_chat(
     # 2. Summary
     summary_resp = client.post("/api/summary", json={"doc_hash": doc_hash})
     assert summary_resp.status_code == 200
-    assert (
-        "Attention Paper"
-        in summary_resp.json()["header"]["title"]
-    )
+    assert "Attention Paper" in summary_resp.json()["header"]["title"]
 
     # 3. Chat
     chat_resp = client.post(

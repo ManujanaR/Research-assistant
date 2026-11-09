@@ -8,12 +8,15 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.orm import Session
 
+from app.core.config import get_settings
 from app.core.dependencies import (
     get_current_user,
     get_paper_text_store,
     get_summary_cache,
 )
 from app.db.session import get_db
+from app.models.credibility import DocumentCredibility
+from app.models.document import DocumentMetadata
 from app.models.user import User
 from app.schemas.export import ExportRequest
 from app.services.cache import SummaryCache
@@ -58,7 +61,48 @@ async def export_report(
             detail=UNKNOWN_DOC_DETAIL,
         )
 
-    # Step 3: Build Word document (.docx) in memory
+    # Step 3: Query metadata and credibility if present in database
+    metadata = (
+        db.query(DocumentMetadata).filter(DocumentMetadata.doc_hash == doc_hash).first()
+    )
+    credibility = (
+        db.query(DocumentCredibility)
+        .filter(DocumentCredibility.doc_hash == doc_hash)
+        .first()
+    )
+
+    # Step 4: Resolve page and chunk metrics locally
+    pages = 1
+    chunks = 0
+    try:
+        from app.services.qa import (
+            get_chroma_collection_name,
+            get_document_page_count,
+        )
+
+        pages = get_document_page_count(doc_hash)
+        import chromadb
+        from chromadb.errors import ChromaError
+
+        settings = get_settings()
+        client = chromadb.PersistentClient(path=settings.chroma_dir)
+        coll = client.get_collection(get_chroma_collection_name(doc_hash))
+        chunks = coll.count()
+    except (
+        ChromaError,
+        ValueError,
+        KeyError,
+        OSError,
+        RuntimeError,
+        AttributeError,
+    ) as exc:
+        logger.debug(
+            "Local doc_metrics resolution fallback for %s: %s", doc_hash[:8], exc
+        )
+
+    doc_metrics = {"pages": pages, "chunks": chunks}
+
+    # Step 5: Build Word document (.docx) in memory
     paper_filename = f"{doc_hash[:8]}.pdf"
     date_str = datetime.now(UTC).strftime("%B %d, %Y")
     docx_bytes = build_docx(
@@ -66,9 +110,13 @@ async def export_report(
         filename=paper_filename,
         date=date_str,
         messages=request.messages,
+        doc_metrics=doc_metrics,
+        credibility=credibility,
+        metadata=metadata,
     )
 
     duration = time.perf_counter() - start_time
+    # Security requirement: Never log document text or chat transcripts
     logger.info(
         "Export generated for doc_hash=%s: messages=%d, duration=%.4fs",
         doc_hash[:8],
