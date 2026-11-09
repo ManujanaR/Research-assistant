@@ -264,3 +264,13 @@ Errors appear inline above the button, with an icon and text. Colour is not the 
 - Seven ordered sections: Getting started, Reading the summary, Asking questions, Citations, Exporting, Account, Limits.
 - Closes with Escape, the close button, or a backdrop click, and returns focus to the Help button.
 
+### 4.13 PDF viewer
+
+- **ViewPdfButton:** Sits in the top bar actions area, between the Export and Help controls. It appears only when a document is active, and is hidden after “Upload another paper”. Below lg, it shows as an icon only, with `aria-label="View PDF"` and a title tooltip.
+- **PdfViewerDrawer:** A dialog with `role="dialog"`, `aria-modal="true"`, and `aria-label="Original PDF Document"`. Below lg it is a full-height modal. From lg upward it is a right-hand half-screen drawer (`lg:w-1/2`).
+- **Embedding:** The PDF is embedded with `<object data={blobUrl} type="application/pdf">`.
+- **Privacy statement:** Shown in the drawer header area as small text: “The PDF is shown from memory in your browser. The server keeps only the extracted text and index, as before.”
+- **Fallback:** If inline rendering fails or the browser doesn’t support it, show “Your browser can’t show this PDF inline.” with an “Open in new tab” link.
+- **Dismissal:** Escape, the close button, or a backdrop click. Focus returns to the View PDF button.
+
+
