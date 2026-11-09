@@ -692,7 +692,7 @@ describe("Frontend UI Components", () => {
       expect(screen.getByText("Convert other files")).toBeDefined();
       expect(
         screen.getByText(
-          "Opens iLovePDF in a new tab. Your file is sent to iLovePDF, not to Mitra."
+          "Opens iLovePDF in a new tab. Your file is sent to iLovePDF, not to us."
         )
       ).toBeDefined();
     });
@@ -2048,7 +2048,7 @@ describe("Frontend UI Components", () => {
       expect(btn.getAttribute("aria-expanded")).toBe("false");
     });
 
-    it("renders HelpPanel with accessible dialog semantics, aria-modal='true', and title 'How to use Mitra'", () => {
+    it("renders HelpPanel with accessible dialog semantics, aria-modal='true', and title 'How to use this'", () => {
       render(<HelpTestWrapper />);
       const helpBtn = screen.getByRole("button", { name: "Help" });
       fireEvent.click(helpBtn);
@@ -2058,7 +2058,7 @@ describe("Frontend UI Components", () => {
       expect(dialog.getAttribute("aria-modal")).toBe("true");
       expect(dialog.getAttribute("aria-labelledby")).toBe("help-panel-title");
 
-      const title = screen.getByRole("heading", { name: "How to use Mitra" });
+      const title = screen.getByRole("heading", { name: "How to use this" });
       expect(title).toBeDefined();
       expect(title.id).toBe("help-panel-title");
     });
