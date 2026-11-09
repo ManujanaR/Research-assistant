@@ -44,6 +44,7 @@ Behavioral Guidelines:
 3. Empirical & Document Research Questions:
    - When the user asks factual, analytical, or scientific questions about the paper's contents, methods, data, or arguments:
      * Ground your answer strictly on <RETRIEVED_CHUNKS>.
+     * If the question contains a minor spelling error and the intended concept is clearly present in the passages, answer it. Do not refuse because of the spelling.
      * ONLY if the retrieved excerpts contain zero supporting evidence or relevant information to answer the question, output strictly:
        "The uploaded paper does not contain information to answer this question."
 
@@ -378,6 +379,7 @@ GREETING_OR_SMALLTALK_PATTERNS = [
     r"^have\s+a\s+(good|nice|great)\s+(day|night|one)$",
     # Small talk queries
     r"^(how\s+are\s+you|who\s+are\s+you|what\s+are\s+you|what\s+can\s+you\s+do|what\s+is\s+your\s+name|tell\s+me\s+about\s+yourself)$",
+    r"^(i\s+love\s+you|love\s+you|i\s+like\s+you)$",
     # Acknowledgments
     r"^(ok|okay|cool|great|awesome|got\s+it|understood|nice|perfect|alright|fine|sure)$",
 ]

@@ -835,3 +835,191 @@ def test_non_owner_gets_404_before_rewrite_call(
         assert embedder.call_count == 0, "Embedder must not be called for non-owner"
     finally:
         app.dependency_overrides.clear()
+
+
+def test_answer_system_prompt_contains_spelling_tolerance_rule() -> None:
+    """The answer system prompt explicitly instructs to answer questions with minor spelling errors if concept is present."""
+    from app.services.qa import format_chat_system_prompt
+
+    prompt = format_chat_system_prompt()
+    assert (
+        "If the question contains a minor spelling error and the intended concept is clearly present in the passages, answer it. Do not refuse because of the spelling."
+        in prompt
+    )
+
+
+def test_grounded_answer_on_typo_with_concept_present(
+    auth_client: AuthenticatedTestClient, tmp_path: Path
+) -> None:
+    """A question containing a minor spelling error whose concept is present in context receives a grounded answer."""
+    doc_hash = "1" * 64
+    chroma_dir = tmp_path / "chroma_test"
+    chroma_client = chromadb.PersistentClient(path=str(chroma_dir))
+    embedder = RecordingEmbedder()
+
+    asyncio.run(
+        index_document(
+            doc_hash=doc_hash,
+            chunks=[
+                {
+                    "text": "The core methodology relies on self-supervised contrastive learning algorithms.",
+                    "page": 2,
+                }
+            ],
+            embed_fn=embedder,
+            client=chroma_client,
+        )
+    )
+    auth_client.record_ownership(doc_hash)
+
+    grounded_answer = "The core methodology uses self-supervised contrastive learning algorithms to pre-train representations."
+    fake_client = RecordingChatClient(
+        rewrite_output={
+            "intent": "document_question",
+            "query": "methodology contrastive learning algorithm",
+        },
+        stream_tokens=[grounded_answer],
+    )
+
+    app.dependency_overrides[get_chroma_client] = lambda: chroma_client
+    app.dependency_overrides[get_embedding_function] = lambda: embedder
+    app.dependency_overrides[get_chat_llm_client] = lambda: fake_client
+
+    try:
+        response = auth_client.post(
+            "/api/chat",
+            json={
+                "doc_hash": doc_hash,
+                "message": "What is the core metodology and algoritm?",
+                "history": [],
+            },
+        )
+        assert response.status_code == 200
+        events = parse_sse_events(response.text)
+        token_events = [e for e in events if e["event"] == "token"]
+        streamed_answer = "".join(e["data"]["text"] for e in token_events)
+
+        # Must receive grounded answer, NOT the fallback refusal sentence
+        assert streamed_answer == grounded_answer
+        assert streamed_answer != FALLBACK_GROUNDING_MESSAGE
+
+        # Sources must be attached for grounded answers
+        sources_events = [e for e in events if e["event"] == "sources"]
+        assert len(sources_events) == 1
+        assert len(sources_events[0]["data"]) > 0
+        assert sources_events[0]["data"][0]["page_number"] == 2
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_fallback_on_absent_concept_with_typo(
+    auth_client: AuthenticatedTestClient, tmp_path: Path
+) -> None:
+    """A question containing a typo whose concept is absent from passages returns strictly the fallback refusal sentence."""
+    doc_hash = "2" * 64
+    chroma_dir = tmp_path / "chroma_test"
+    chroma_client = chromadb.PersistentClient(path=str(chroma_dir))
+    embedder = RecordingEmbedder()
+
+    asyncio.run(
+        index_document(
+            doc_hash=doc_hash,
+            chunks=[{"text": "Paper on cellular respiration in yeast.", "page": 1}],
+            embed_fn=embedder,
+            client=chroma_client,
+        )
+    )
+    auth_client.record_ownership(doc_hash)
+
+    fake_client = RecordingChatClient(
+        rewrite_output={
+            "intent": "document_question",
+            "query": "quantum computing algorithm",
+        },
+        stream_tokens=[FALLBACK_GROUNDING_MESSAGE],
+    )
+
+    app.dependency_overrides[get_chroma_client] = lambda: chroma_client
+    app.dependency_overrides[get_embedding_function] = lambda: embedder
+    app.dependency_overrides[get_chat_llm_client] = lambda: fake_client
+
+    try:
+        response = auth_client.post(
+            "/api/chat",
+            json={
+                "doc_hash": doc_hash,
+                "message": "What is the qunatum compuuting algoritm?",
+                "history": [],
+            },
+        )
+        assert response.status_code == 200
+        events = parse_sse_events(response.text)
+        token_events = [e for e in events if e["event"] == "token"]
+        streamed_answer = "".join(e["data"]["text"] for e in token_events)
+
+        # Absent concept must strictly return fallback refusal sentence (no hallucination)
+        assert streamed_answer == FALLBACK_GROUNDING_MESSAGE
+
+        # Fallback answers must have empty sources
+        sources_events = [e for e in events if e["event"] == "sources"]
+        assert len(sources_events) == 1
+        assert sources_events[0]["data"] == []
+    finally:
+        app.dependency_overrides.clear()
+
+
+@pytest.mark.parametrize("casual_message", ["i love you", "hi", "thank you"])
+def test_off_topic_messages_return_short_replies_without_citations(
+    auth_client: AuthenticatedTestClient,
+    tmp_path: Path,
+    casual_message: str,
+) -> None:
+    """Casual off-topic messages like 'i love you', 'hi', and 'thank you' return short replies with no citations or attached passages."""
+    doc_hash = "3" * 64
+    chroma_dir = tmp_path / "chroma_test"
+    chroma_client = chromadb.PersistentClient(path=str(chroma_dir))
+    embedder = RecordingEmbedder()
+
+    asyncio.run(
+        index_document(
+            doc_hash=doc_hash,
+            chunks=[{"text": "Some research paper content.", "page": 1}],
+            embed_fn=embedder,
+            client=chroma_client,
+        )
+    )
+    auth_client.record_ownership(doc_hash)
+
+    fake_client = RecordingChatClient(
+        rewrite_output={"intent": "chat", "query": ""},
+        stream_tokens=["I am here to assist you with exploring this paper!"],
+    )
+
+    app.dependency_overrides[get_chroma_client] = lambda: chroma_client
+    app.dependency_overrides[get_embedding_function] = lambda: embedder
+    app.dependency_overrides[get_chat_llm_client] = lambda: fake_client
+
+    try:
+        embedder.call_count = 0
+        response = auth_client.post(
+            "/api/chat",
+            json={
+                "doc_hash": doc_hash,
+                "message": casual_message,
+                "history": [],
+            },
+        )
+        assert response.status_code == 200
+        events = parse_sse_events(response.text)
+        token_events = [e for e in events if e["event"] == "token"]
+        assert len(token_events) > 0
+
+        # No citations or attached passages
+        sources_events = [e for e in events if e["event"] == "sources"]
+        assert len(sources_events) == 1
+        assert sources_events[0]["data"] == []
+
+        # Zero vector retrieval calls for casual chat
+        assert embedder.call_count == 0
+    finally:
+        app.dependency_overrides.clear()
