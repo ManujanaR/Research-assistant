@@ -6,7 +6,7 @@ import { AuthPanel } from "@/components/AuthPanel";
 import { ProfileMenu } from "@/components/ProfileMenu";
 import { SourcePanel } from "@/components/SourcePanel";
 import { StudioPanel } from "@/components/StudioPanel";
-import { ChatPanel } from "@/components/ChatPanel";
+import { ChatPanel, MessageWithSources } from "@/components/ChatPanel";
 import { ExportButton } from "@/components/ExportButton";
 import { ViewPdfButton } from "@/components/ViewPdfButton";
 import { PdfViewerDrawer } from "@/components/PdfViewerDrawer";
@@ -45,7 +45,33 @@ export default function Home() {
   const [summary, setSummary] = useState<SummaryResponse | null>(null);
   const [isSummaryLoading, setIsSummaryLoading] = useState(false);
   const [summaryError, setSummaryError] = useState<string | null>(null);
-  const [messages] = useState<ExportMessage[]>([]);
+  // Lift chat messages state keyed by active document ID for the session (in-memory React state)
+  const [chatMessagesByDoc, setChatMessagesByDoc] = useState<
+    Record<string, MessageWithSources[]>
+  >({});
+
+  const activeDocHash = uploadResult?.doc_hash ?? "";
+  const currentChatMessages = activeDocHash
+    ? chatMessagesByDoc[activeDocHash] ?? []
+    : [];
+
+  const handleChatMessagesChange = (
+    updater:
+      | MessageWithSources[]
+      | ((prev: MessageWithSources[]) => MessageWithSources[])
+  ) => {
+    if (!activeDocHash) return;
+    setChatMessagesByDoc((prev) => {
+      const prevMessages = prev[activeDocHash] ?? [];
+      const nextMessages =
+        typeof updater === "function" ? updater(prevMessages) : updater;
+      return {
+        ...prev,
+        [activeDocHash]: nextMessages,
+      };
+    });
+  };
+
   const [isHelpOpen, setIsHelpOpen] = useState(false);
   const helpButtonRef = useRef<HTMLButtonElement | null>(null);
   const [pdfBlobUrl, setPdfBlobUrl] = useState<string | null>(null);
@@ -158,6 +184,14 @@ export default function Home() {
   }, []);
 
   const handleUploaded = async (result: UploadResponse) => {
+    // Switching documents clears previous document's messages
+    if (uploadResult?.doc_hash && uploadResult.doc_hash !== result.doc_hash) {
+      setChatMessagesByDoc((prev) => {
+        const copy = { ...prev };
+        delete copy[uploadResult.doc_hash];
+        return copy;
+      });
+    }
     setUploadResult(result);
     setIsSummaryLoading(true);
     setSummaryError(null);
@@ -191,6 +225,7 @@ export default function Home() {
     setSummaryError(null);
     setIsSummaryLoading(false);
     setActiveTab("chat");
+    setChatMessagesByDoc({});
   };
 
   const handleSignOut = () => {
@@ -283,7 +318,11 @@ export default function Home() {
 
       <ExportButton
         docHash={summary ? uploadResult?.doc_hash : null}
-        messages={messages.slice(-200)}
+        messages={currentChatMessages.slice(-200).map((m) => ({
+          role: m.role,
+          text: m.content,
+          sources: m.sources,
+        }))}
       />
 
       <ViewPdfButton
@@ -325,7 +364,11 @@ export default function Home() {
           data-testid="desktop-chat-panel"
           className="flex-1 min-w-0 h-full overflow-hidden p-3 sm:p-4 bg-bg-base transition-colors"
         >
-          <ChatPanel docHash={uploadResult?.doc_hash ?? ""} />
+          <ChatPanel
+            docHash={uploadResult?.doc_hash ?? ""}
+            messages={currentChatMessages}
+            onMessagesChange={handleChatMessagesChange}
+          />
         </section>
 
         {/* Right Column: Structured Summary */}
@@ -346,35 +389,42 @@ export default function Home() {
         data-testid="mobile-workspace"
         className="flex lg:hidden flex-1 min-h-0 flex-col overflow-hidden w-full h-full"
       >
-        {/* Active Panel View */}
+        {/* Active Panel View: keep mounted across tab switches, toggle visibility with hidden */}
         <div className="flex-1 min-h-0 overflow-y-auto w-full">
-          {activeTab === "source" && (
-            <div className="h-full w-full">
-              <SourcePanel
-                docHash={uploadResult?.doc_hash}
-                filename={uploadResult?.filename}
-                pageCount={uploadResult?.page_count}
-                chunkCount={uploadResult?.chunk_count}
-                onReset={handleReset}
-                isReady={Boolean(summary && !isSummaryLoading)}
-                onUploaded={handleUploaded}
-              />
-            </div>
-          )}
-          {activeTab === "chat" && (
-            <div className="h-full w-full p-2.5 sm:p-4 bg-bg-base">
-              <ChatPanel docHash={uploadResult?.doc_hash ?? ""} />
-            </div>
-          )}
-          {activeTab === "studio" && (
-            <div className="h-full w-full">
-              <StudioPanel
-                summary={summary}
-                isLoading={isSummaryLoading}
-                error={summaryError}
-              />
-            </div>
-          )}
+          <div
+            data-testid="mobile-source-container"
+            className={`h-full w-full ${activeTab === "source" ? "" : "hidden"}`}
+          >
+            <SourcePanel
+              docHash={uploadResult?.doc_hash}
+              filename={uploadResult?.filename}
+              pageCount={uploadResult?.page_count}
+              chunkCount={uploadResult?.chunk_count}
+              onReset={handleReset}
+              isReady={Boolean(summary && !isSummaryLoading)}
+              onUploaded={handleUploaded}
+            />
+          </div>
+          <div
+            data-testid="mobile-chat-container"
+            className={`h-full w-full p-2.5 sm:p-4 bg-bg-base ${activeTab === "chat" ? "" : "hidden"}`}
+          >
+            <ChatPanel
+              docHash={uploadResult?.doc_hash ?? ""}
+              messages={currentChatMessages}
+              onMessagesChange={handleChatMessagesChange}
+            />
+          </div>
+          <div
+            data-testid="mobile-studio-container"
+            className={`h-full w-full ${activeTab === "studio" ? "" : "hidden"}`}
+          >
+            <StudioPanel
+              summary={summary}
+              isLoading={isSummaryLoading}
+              error={summaryError}
+            />
+          </div>
         </div>
 
         {/* Mobile/Tablet Bottom Tab Bar */}

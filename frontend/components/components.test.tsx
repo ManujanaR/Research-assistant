@@ -1066,6 +1066,179 @@ describe("Frontend UI Components", () => {
       fireEvent.keyDown(tabs[0], { key: "ArrowLeft" });
       expect(tabs[2].getAttribute("aria-selected")).toBe("true");
     });
+
+    it("switching from Chat to Summary and back keeps every message and citation, and switching documents clears previous messages", async () => {
+      mockMatchMedia(false);
+
+      vi.mocked(streamChat).mockImplementation(async (_params, handlers) => {
+        handlers.onToken("The core approach ");
+        handlers.onToken("uses self-attention.");
+        handlers.onSources([
+          { page_number: 4, snippet: "Transformer models rely on self-attention." },
+        ]);
+        handlers.onDone();
+      });
+
+      render(<Home />);
+      await screen.findByTestId("mobile-workspace");
+
+      // Upload file
+      const file = new File(["pdf content"], "test-transformer.pdf", {
+        type: "application/pdf",
+      });
+      const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+      fireEvent.change(input, { target: { files: [file] } });
+
+      await waitFor(() => {
+        expect(screen.getByTestId("mobile-workspace")).toBeDefined();
+      });
+
+      const mobileChatContainer = screen.getByTestId("mobile-chat-container");
+      expect(mobileChatContainer.className).not.toContain("hidden");
+
+      // Send a chat message in the mobile chat panel
+      const textarea = within(mobileChatContainer).getByPlaceholderText(
+        /ask a question about this paper/i
+      );
+      const sendButton = within(mobileChatContainer).getByRole("button", {
+        name: /send message/i,
+      });
+
+      fireEvent.change(textarea, {
+        target: { value: "What is the architecture?" },
+      });
+      fireEvent.click(sendButton);
+
+      await waitFor(() => {
+        expect(
+          within(mobileChatContainer).getByText("What is the architecture?")
+        ).toBeDefined();
+        expect(
+          within(mobileChatContainer).getByText("The core approach uses self-attention.")
+        ).toBeDefined();
+        expect(
+          within(mobileChatContainer).getByRole("button", { name: "Sources (1)" })
+        ).toBeDefined();
+      });
+
+      // Expand citation
+      const toggle = within(mobileChatContainer).getByRole("button", { name: "Sources (1)" });
+      fireEvent.click(toggle);
+      expect(within(mobileChatContainer).getByText("Page 4")).toBeDefined();
+      expect(
+        within(mobileChatContainer).getByText("Transformer models rely on self-attention.")
+      ).toBeDefined();
+
+      // Switch to Summary tab (tab index 2)
+      const tabs = screen.getAllByRole("tab");
+      fireEvent.click(tabs[2]);
+
+      // Chat container should now be hidden via className, but remain mounted in DOM
+      expect(screen.getByTestId("mobile-chat-container").className).toContain("hidden");
+      expect(screen.getByTestId("mobile-studio-container").className).not.toContain("hidden");
+
+      // Switch back to Chat tab (tab index 1)
+      fireEvent.click(tabs[1]);
+      expect(screen.getByTestId("mobile-chat-container").className).not.toContain("hidden");
+
+      // Confirm every message and citation is still there
+      expect(
+        within(mobileChatContainer).getByText("What is the architecture?")
+      ).toBeDefined();
+      expect(
+        within(mobileChatContainer).getByText("The core approach uses self-attention.")
+      ).toBeDefined();
+      expect(within(mobileChatContainer).getByText("Page 4")).toBeDefined();
+      expect(
+        within(mobileChatContainer).getByText("Transformer models rely on self-attention.")
+      ).toBeDefined();
+
+      // Switch to Source tab and click "Upload another paper" (Reset)
+      fireEvent.click(tabs[0]);
+      const resetBtn = within(screen.getByTestId("mobile-workspace")).getByRole("button", {
+        name: /upload another paper/i,
+      });
+      fireEvent.click(resetBtn);
+
+      // Confirm previous document's messages are cleared
+      await waitFor(() => {
+        expect(screen.queryByText("What is the architecture?")).toBeNull();
+      });
+    });
+
+    it("an in-flight streamed answer keeps streaming while the chat panel is hidden", async () => {
+      mockMatchMedia(false);
+
+      let emitToken2: () => void = () => {};
+      let finishStream: () => void = () => {};
+
+      vi.mocked(streamChat).mockImplementation(async (_params, handlers) => {
+        handlers.onToken("First token. ");
+        emitToken2 = () => {
+          handlers.onToken("Second in-flight token.");
+          handlers.onSources([
+            { page_number: 7, snippet: "In-flight citation snippet." },
+          ]);
+        };
+        finishStream = () => {
+          handlers.onDone();
+        };
+      });
+
+      render(<Home />);
+      await screen.findByTestId("mobile-workspace");
+
+      // Upload file
+      const file = new File(["pdf content"], "test-transformer.pdf", {
+        type: "application/pdf",
+      });
+      const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+      fireEvent.change(input, { target: { files: [file] } });
+
+      await waitFor(() => {
+        expect(screen.getByTestId("mobile-workspace")).toBeDefined();
+      });
+
+      const mobileChatContainer = screen.getByTestId("mobile-chat-container");
+      const textarea = within(mobileChatContainer).getByPlaceholderText(
+        /ask a question about this paper/i
+      );
+      const sendButton = within(mobileChatContainer).getByRole("button", {
+        name: /send message/i,
+      });
+
+      fireEvent.change(textarea, {
+        target: { value: "Stream test question" },
+      });
+      fireEvent.click(sendButton);
+
+      await waitFor(() => {
+        expect(within(mobileChatContainer).getByText("First token.")).toBeDefined();
+      });
+
+      // Switch views to Summary while stream is in-flight
+      const tabs = screen.getAllByRole("tab");
+      fireEvent.click(tabs[2]); // Summary tab
+      expect(screen.getByTestId("mobile-chat-container").className).toContain("hidden");
+
+      // In-flight stream emits second token, sources, and completes while hidden
+      emitToken2();
+      finishStream();
+
+      // Switch back to Chat view
+      fireEvent.click(tabs[1]);
+      expect(screen.getByTestId("mobile-chat-container").className).not.toContain("hidden");
+
+      // Confirm streamed answer and citation were not dropped
+      await waitFor(() => {
+        expect(
+          within(mobileChatContainer).getByText("First token. Second in-flight token.")
+        ).toBeDefined();
+        expect(
+          within(mobileChatContainer).getByRole("button", { name: "Sources (1)" })
+        ).toBeDefined();
+      });
+    });
   });
 
   describe("ThemeToggle", () => {

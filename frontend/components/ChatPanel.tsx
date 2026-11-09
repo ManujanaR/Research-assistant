@@ -15,17 +15,42 @@ import {
 import { ChatMessage, ChatSource, streamChat } from "@/lib/api";
 import { SourceCard } from "./SourceCard";
 
-export interface ChatPanelProps {
-  docHash: string;
-}
-
-interface MessageWithSources extends ChatMessage {
+export interface MessageWithSources extends ChatMessage {
   id: string;
   sources?: ChatSource[];
 }
 
-export function ChatPanel({ docHash }: ChatPanelProps) {
-  const [messages, setMessages] = useState<MessageWithSources[]>([]);
+export interface ChatPanelProps {
+  docHash: string;
+  messages?: MessageWithSources[];
+  onMessagesChange?: (
+    updater:
+      | MessageWithSources[]
+      | ((prev: MessageWithSources[]) => MessageWithSources[])
+  ) => void;
+}
+
+export function ChatPanel({
+  docHash,
+  messages: controlledMessages,
+  onMessagesChange,
+}: ChatPanelProps) {
+  const [internalMessages, setInternalMessages] = useState<MessageWithSources[]>([]);
+  const messages =
+    controlledMessages !== undefined ? controlledMessages : internalMessages;
+
+  const setMessages = (
+    updater:
+      | MessageWithSources[]
+      | ((prev: MessageWithSources[]) => MessageWithSources[])
+  ) => {
+    if (onMessagesChange) {
+      onMessagesChange(updater);
+    } else {
+      setInternalMessages(updater);
+    }
+  };
+
   const [input, setInput] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
