@@ -13,184 +13,71 @@ A full-stack, production-ready research assistant application designed for resea
 
 ---
 
-## Key Features
+## Application Preview
 
-- **Single PDF Upload & Ingestion**:
-  - Strict validation of `application/pdf` MIME type and 20MB default size limit (`MAX_UPLOAD_MB`).
-  - SHA-256 content deduplication preventing redundant processing.
-  - Automatic Tesseract OCR fallback for scanned or image-only PDFs with configurable timeouts (`OCR_ENABLED`, `OCR_TIMEOUT_SECONDS`).
-  - Centered, accessible drag-and-drop upload zone on both desktop and mobile viewports.
-- **Structured 5-Section Summary**:
-  - Generated with strict Pydantic schema validation (`SummarySchema`):
-    1. *Title, Authors & Abstract*
-    2. *Problem Statement*
-    3. *Methodology*
-    4. *Key Results*
-    5. *Conclusion*  
-  - Automatic 1-retry schema repair on malformed LLM outputs.
-  - Persistent disk caching keyed by document SHA-256.
-- **Cross-Section Comparison & Dual-Pass Retrieval**:
-  - **Structured Comparative Classification**: The classifier extracts `is_comparative: bool` and `comparison_targets: list[str]` alongside intent and rewritten queries.
-  - **Dual-Pass Retrieval Pipeline**: When a comparative question arises (e.g., comparing Abstract claims against Results), the retrieval pipeline runs two targeted passes:
-    - *Pass 1 (Abstract Pass)*: Queries the Abstract using structural section queries (`top_k=3`).
-    - *Pass 2 (Results/Secondary Pass)*: Queries the Results or Discussion section (`top_k=3`).
-  - **Deduplication & Distance Ordering**: Merges passages, eliminates duplicate chunk IDs, and sorts strictly by cosine distance.
-  - **Missing Section Fallback**: If a targeted section is absent, reports that the section was not found without substituting arbitrary text.
-- **Interactive Persona Suggestion Chips**:
-  - Dynamically offered conversational prompt suggestions tailored to user workflows:
-    - **Reader Mode**: *"Core Findings"*, *"Methodology"*, *"Dataset / Setup"*.
-    - **Author Mode**: *"Flaws & Limitations"*, *"Gaps & Improvements"*, *"Abstract vs Findings"*.
-  - Full keyboard accessibility with ARIA tablist patterns (`role="tablist"` / `role="tab"`).
-- **Executive Word Export (`.docx`)**:
-  - Fast, server-side document generation powered by `python-docx` (`/api/export`).
-  - Exports a styled Word report featuring the paper title, authors, venue metadata, full 5-section executive breakdown, and optional Q&A conversation transcripts.
-- **Academic Credibility Scoring**:
-  - Real-time bibliometric verification via the OpenAlex API (`/api/credibility`).
-  - Computes h-index, citation count, publication year, Open Access status, and venue host metrics.
-  - **Strict Privacy Boundary**: Only queries by extracted paper title or DOI string. Document bodies, chunks, chat logs, and user identities are never transmitted externally.
-- **Built-in PDF Viewer Drawer**:
-  - Responsive client-side drawer allowing side-by-side reading of the original PDF alongside summary cards and chat.
-  - Strict blob object URL lifecycle management ensuring zero memory leaks.
-- **KaTeX Mathematical Notation Rendering**:
-  - Native rendering for inline `\(...\)` (or `$ ... $`) and display block `\[...\]` (or `$$ ... $$`) LaTeX equations.
-  - Rendered across both structured summary cards and conversational chat message bubbles.
-  - Code-block isolation prevents syntax inside backticks (`` ` `` / ```` ``` ````) from accidental LaTeX parsing.
-  - Horizontal scrolling enabled on block formulas (`.katex-display`) to preserve responsive layouts.
-- **Strict Content Security & HTML Sanitization**:
-  - Model and PDF outputs are treated strictly as untrusted text.
-  - Markdown renderer operates without `rehype-raw`, completely eliminating stored XSS vectors. Raw HTML tags (e.g., `<script>`, `<img onerror=...>`) render as safe, escaped literal text entities.
-- **Universal Multilingual Q&A Policy**:
-  - **Native Script Enforcement**: Answers in the user's language using its official native script (e.g., Sinhala Unicode script `සිංහල අකුරු` for Sinhala and Singlish queries).
-  - **Phonetic Slang Suppression**: Refuses romanised phonetic slang, translating colloquial intent into grammatically correct native script.
-  - **Technical Term Preservation**: Specialized academic terminology, variables, and named entities (e.g., *Transformer architecture*, *BLEU score*) survive in standard English form.
-  - **Immutable English Fallback Contract**: Ungrounded queries strictly return the English fallback string (`"The uploaded paper does not contain information to answer this question."`) across all languages, ensuring reliable automated citation suppression.
-- **Natural-Language RAG Chat & Intent Classification**:
-  - **Structured Classification**: Fast semantic routing (`classifier.py`) distinguishing greetings, general document overviews, specific document questions, comparative questions, and out-of-scope inquiries.
-  - **Context-Aware Query Rewriting**: Resolves pronouns (*"it"*, *"the first one"*, *"they"*) and casual phrasing into standalone academic queries using conversation history.
-  - **Accurate Provenance Citations**: Returns at most 3 top-ranked sources based on cosine distance. Shows page numbers directly from stored PDF metadata with complete-sentence verbatim snippets ($\le 200$ chars).
-  - **Collapsed Citations UI**: Answers display a clean, collapsed `"Sources (N)"` dropdown that expands without cluttering the answer text.
-  - **Strict Grounding & Fallback**: Answers are grounded strictly in paper excerpts. Cleanly suppresses citations for small talk, greetings, and ungrounded replies.
-- **Authentication & User Data Isolation**:
-  - Secure email/password authentication using bcrypt password hashing.
-  - JWT session tokens stored in secure, `HttpOnly`, `SameSite=Lax` cookies.
-  - SQLite database (`app.db`) isolating uploaded documents, summaries, and chat sessions to the authenticated owner.
-- **Crash & Restart Resilience**:
-  - Summaries are persisted in `.cache/summaries/{doc_hash}.json`.
-  - Vectors and chunks are stored permanently in ChromaDB collections (`.chroma/doc_{doc_hash[:32]}`).
-  - Full paper text can be rehydrated from ChromaDB chunks if the backend restarts.
+### Desktop View
+The responsive 3-column desktop workspace integrates the **Source & Ingestion** panel (left), the **Paper Q&A Chat** with suggestion chips (center), and the **Structured 5-Section Summary** with KaTeX support (right).
+
+![Research Assistant - Desktop View](docs/screenshots/desktop-view.png)
+
+### Mobile View
+A touch-friendly mobile interface with clean bottom navigation tabs (**Source**, **Chat**, **Summary**) optimized for mobile viewports.
+
+<p align="center">
+  <img src="docs/screenshots/mobile-view.png" alt="Research Assistant - Mobile View" width="360" />
+</p>
 
 ---
 
-## Architecture & Workflows
+## Functional Requirements
 
-### System Architecture
+1. **Document Upload**: Users can upload a single research paper (at once) in PDF format.
+2. **Structured Summary Generation**:
+   - On upload, automatically generate a summary with the following 5 sections:
+     - *Title & Authors and Abstract*
+     - *Problem Statement*
+     - *Methodology*
+     - *Key Results*
+     - *Conclusion*
+   - Display the summary in an interactive, readable format.
+3. **Question Answering Chatbot**:
+   - Enable users to ask natural-language questions about the uploaded paper, fully grounded in the document content via RAG flows with citations.
 
-```mermaid
-flowchart TD
-    subgraph Frontend["Frontend (Next.js 15 / TypeScript / Tailwind)"]
-        UI_Upload["UploadZone (Drag & Drop PDF)"]
-        UI_Summary["SummaryView (5 Structured Sections)"]
-        UI_Chat["ChatPanel (SSE Stream & Suggestion Chips)"]
-        UI_Drawer["PdfViewerDrawer (Side-by-Side Reading)"]
-        UI_Cred["CredibilityCard (Bibliometrics)"]
-        UI_Export["ExportButton (DOCX Download)"]
-    end
+---
 
-    subgraph Backend["FastAPI Backend (Async Python)"]
-        API_Auth["/api/auth (JWT in HttpOnly Cookie)"]
-        API_Upload["/api/upload (PyMuPDF & Ingestion)"]
-        API_Summary["/api/summary (Cached Structured Output)"]
-        API_Chat["/api/chat (Classifier & RAG Stream)"]
-        API_Export["/api/export (Word Report Generator)"]
-        API_Cred["/api/credibility (OpenAlex Metrics)"]
-        
-        Service_Parser["pdf_parser.py (PyMuPDF / OCR)"]
-        Service_Classifier["classifier.py (Intent & Dual-Pass Targets)"]
-        Service_QA["qa.py (Dual-Pass & Single Retrieval)"]
-        Service_Export["export_service.py (python-docx)"]
-        Service_Cred["credibility_service.py (OpenAlex API)"]
-    end
+## Key Features
 
-    subgraph Storage["Persistence & AI Services"]
-        DB_SQL["SQLite (app.db: Users & Ownership)"]
-        Chroma["ChromaDB (.chroma: Embeddings & Chunks)"]
-        DiskCache["Disk Cache (.cache: Summaries & Credibility)"]
-        OpenAI["OpenAI API (GPT-4o, gpt-4o-mini, text-embedding-3-small)"]
-        OpenAlex["OpenAlex API (api.openalex.org: Title/DOI only)"]
-    end
+- **Single PDF Upload & Ingestion**: Fast PDF parsing via PyMuPDF with SHA-256 deduplication, 20MB limit, and automatic OCR fallback for scanned documents.
+- **Structured 5-Section Summary**: Generates *Title/Abstract*, *Problem*, *Methodology*, *Results*, and *Conclusion* with strict Pydantic validation and persistent disk caching.
+- **Cross-Section Comparison & Dual-Pass Retrieval**: Answers comparative queries (e.g. Abstract vs. Results) using structured intent classification and dual-pass chunk retrieval.
+- **Interactive Persona Suggestion Chips**: Quick-start prompt chips tailored for **Reader Mode** (findings, methods) and **Author Mode** (limitations, improvements).
+- **Executive Word Export (`.docx`)**: One-click download of styled `.docx` reports containing paper metadata, executive summary, and full Q&A transcripts.
+- **Academic Credibility Scoring**: Real-time bibliometric verification (h-index, citation count, open access status) queried strictly by title/DOI via OpenAlex.
+- **Built-in PDF Viewer**: Side-by-side reading of the original paper in a responsive drawer with automated memory cleanup.
+- **KaTeX Math Notation**: Native inline (`\(...\)`) and display block (`\[...\]`) LaTeX rendering across summary cards and chat messages.
+- **Strict Content Security**: Zero stored XSS via safe markdown rendering without raw HTML execution.
+- **Universal Multilingual Q&A**: Answers in official native script, preserving English technical terms, with immutable fallback for ungrounded questions.
+- **Smart Intent Classification**: Distinguishes casual day-to-day chat, greetings, and off-topic trivia from paper inquiries, responding naturally without unnecessary vector searches or hallucinated citations.
+- **Natural-Language RAG Chat**: Context-aware query rewriting, cosine-distance filtered retrieval, and collapsible page-level citations.
+- **Authentication & User Data Isolation**: Secure email/password login with JWT in HttpOnly cookies, scoping documents and chats to each user in SQLite.
+- **Crash & Restart Resilience**: Persistent disk-backed summaries and ChromaDB vector collections enable instant session recovery after server restarts.
 
-    UI_Upload --> API_Upload
-    UI_Summary --> API_Summary
-    UI_Chat --> API_Chat
-    UI_Export --> API_Export
-    UI_Cred --> API_Cred
-    UI_Drawer -.-> UI_Upload
+---
 
-    API_Upload --> DB_SQL
-    API_Upload --> Service_Parser
-    API_Upload --> Chroma
-    API_Upload --> OpenAI
+## Document Credibility Scoring
 
-    API_Summary --> DiskCache
-    API_Summary --> OpenAI
+The application computes an objective 100-point credibility score (plus up to 5 bonus points for reproducibility) to evaluate paper reliability:
 
-    API_Chat --> DB_SQL
-    API_Chat --> Service_Classifier
-    Service_Classifier --> OpenAI
-    API_Chat --> Service_QA
-    Service_QA --> Chroma
-    Service_QA --> OpenAI
+| Dimension | Max Points | Evaluation Criteria |
+| :--- | :---: | :--- |
+| **Venue & Indexing** | **35 pts** | Verified indexing record in the OpenAlex academic registry with $\ge 85\%$ title match. |
+| **Citation Impact** | **25 pts** | Citation volume normalized by publication recency (recent papers receive a fair baseline). |
+| **Reference Density** | **20 pts** | Bibliography breadth and citation depth ($\ge 20$ references = 20 pts, 10–19 = 15 pts). |
+| **Academic Affiliation** | **10 pts** | Author affiliation verified via OpenAlex institutional records or `.edu` / `.ac.*` / `.gov` front-matter markers. |
+| **Structural Rigor** | **10 pts** | Detection of standard scientific sections (*Introduction*, *Methodology*, *Results*, *Conclusion*). |
+| **Open Science Bonus** | **+5 pts** | Reproducibility bonus for linked open artifacts (GitHub repositories, Zenodo/HuggingFace datasets). |
 
-    API_Export --> Service_Export
-    API_Export --> DB_SQL
-
-    API_Cred --> Service_Cred
-    Service_Cred --> DiskCache
-    Service_Cred --> OpenAlex
-```
-
-### RAG Chat & Dual-Pass Retrieval Flow
-
-```mermaid
-sequenceDiagram
-    autonumber
-    actor User as User (Browser)
-    participant ChatAPI as FastAPI /api/chat
-    participant DB as SQLite DB
-    participant Classifier as classifier.py (gpt-4o-mini)
-    participant Chroma as ChromaDB Vector Store
-    participant QA as qa.py & LLM (GPT-4o)
-
-    User->>ChatAPI: POST /api/chat {doc_hash, message, history}
-    ChatAPI->>DB: Check ownership (Is doc_hash owned by user?)
-    alt Not Owner
-        ChatAPI-->>User: 404 Not Found
-    end
-
-    ChatAPI->>Classifier: classify_and_rewrite(message, history[-6:])
-    Classifier-->>ChatAPI: {intent, query, is_comparative, comparison_targets}
-
-    alt Intent is "chat", "document_overview", or "outside_paper"
-        ChatAPI->>QA: Stream response directly without vector search
-        QA-->>User: SSE Token stream (sources: [])
-    else Intent is "document_question"
-        alt is_comparative == true (Cross-Section Comparison)
-            ChatAPI->>Chroma: Pass 1: retrieve(doc_hash, query=target_1_query, top_k=3)
-            ChatAPI->>Chroma: Pass 2: retrieve(doc_hash, query=target_2_query, top_k=3)
-            Note over ChatAPI: Merge passes, deduplicate chunk IDs, sort by cosine distance
-        else is_comparative == false (Standard In-Context Retrieval)
-            ChatAPI->>Chroma: Single pass: retrieve(doc_hash, query=rewritten_query, top_k=5)
-        end
-
-        Note over ChatAPI: Filter distance <= CITATION_MAX_DISTANCE<br/>Sort by distance and take top relevant passages
-
-        ChatAPI->>QA: assemble_chat_messages(question, history[-6:], retrieved_chunks, metadata)
-        QA->>QA: Stream tokens via Server-Sent Events (SSE)
-        QA-->>User: event: token {"text": "..."}
-        QA-->>User: event: sources [{"page_number": 2, "snippet": "..."}]
-        QA-->>User: event: done {}
-    end
-```
+> 🔒 **Privacy Guarantee**: Credibility checks query OpenAlex strictly by extracted paper title or DOI string. Document body text, chunk embeddings, chat history, and user identities are never transmitted to external services.
 
 ---
 
@@ -198,7 +85,7 @@ sequenceDiagram
 
 - **Backend**:
   - Python 3.11+ (asyncio, FastAPI)
-  - PyMuPDF (`fitz`) & Tesseract OCR (`pytesseract`) for PDF text parsing
+  - PyMuPDF (`fitz`) for PDF text parsing & OCRmyPDF (`ocrmypdf` + Tesseract) for scanned documents
   - ChromaDB for persistent vector storage and cosine similarity search
   - OpenAI Python SDK (`gpt-4o`, `gpt-4o-mini`, `text-embedding-3-small`)
   - `python-docx` for structured Word report generation
@@ -214,85 +101,23 @@ sequenceDiagram
 
 ---
 
-## Repository Layout
-
-```
-/
-├── AGENTS.md                  # Development instructions & constraints
-├── README.md                  # Project documentation
-├── docs/
-│   ├── spec.md                # Detailed application specification
-│   ├── design.md              # Architectural & UI design decisions
-│   └── specs/
-│       └── multi_section_retrieval.md  # Multi-section dual-pass retrieval spec
-├── backend/
-│   ├── app/
-│   │   ├── main.py            # FastAPI entry point & CORS configuration
-│   │   ├── api/               # API routes: auth, upload, summary, chat, export, credibility, health
-│   │   ├── services/          # pdf_parser, classifier, qa, summarizer, export_service, credibility_service, etc.
-│   │   ├── schemas/           # Pydantic models: auth, upload, summary, chat, export, credibility
-│   │   ├── models/            # SQLAlchemy models: user, document_ownership
-│   │   ├── db/                # Database engine & session management
-│   │   └── core/              # config.py, dependencies.py
-│   ├── tests/                 # 227+ automated unit, integration, and smoke tests (28 test suites)
-│   │   ├── test_auth_session.py
-│   │   ├── test_auth_signup_signin.py
-│   │   ├── test_cache.py
-│   │   ├── test_calibrate_script.py
-│   │   ├── test_chat_endpoint.py
-│   │   ├── test_classifier.py
-│   │   ├── test_config.py
-│   │   ├── test_credibility.py
-│   │   ├── test_duplicate_upload.py
-│   │   ├── test_e2e_auth.py
-│   │   ├── test_e2e_smoke.py
-│   │   ├── test_export.py
-│   │   ├── test_header_extraction.py
-│   │   ├── test_health.py
-│   │   ├── test_metadata_chat_grounding.py
-│   │   ├── test_multi_section_retrieval.py
-│   │   ├── test_natural_chat.py
-│   │   ├── test_ocr.py
-│   │   ├── test_ownership.py
-│   │   ├── test_pdf_parser.py
-│   │   ├── test_profile.py
-│   │   ├── test_provider_config.py
-│   │   ├── test_provider_errors.py
-│   │   ├── test_retrieval.py
-│   │   ├── test_summarizer.py
-│   │   ├── test_summary_endpoint.py
-│   │   ├── test_text_rehydration.py
-│   │   └── test_upload_validation.py
-│   ├── scripts/
-│   │   ├── calibrate_citation_threshold.py
-│   │   └── generate_scanned_pdf.py
-│   ├── requirements.txt
-│   └── .env.example
-└── frontend/
-    ├── app/
-    │   ├── layout.tsx         # Root layout with auth provider & responsive shell
-    │   ├── page.tsx           # Main workspace (Upload, Summary, Chat, Panels)
-    │   ├── signin/page.tsx    # Sign-in page
-    │   ├── signup/page.tsx    # Sign-up page
-    │   └── globals.css
-    ├── components/            # UploadZone, SummaryView, ChatPanel, PdfViewerDrawer, CredibilityCard, ExportButton, etc.
-    ├── lib/
-    │   ├── api.ts             # Typed API client
-    │   └── sse.ts             # SSE parser
-    ├── package.json
-    ├── vitest.config.mts
-    └── .env.local.example
-```
-
----
-
 ## Getting Started
 
 ### 1. Prerequisites
 
 - **Python**: 3.11 or later
 - **Node.js**: 20.9 or later
-- **Tesseract OCR**: Required on the host system to process scanned or image-only PDFs (`tesseract-ocr` on Ubuntu/Debian, `tesseract` on Fedora/macOS).
+  # Testing OCR & Scanned PDFs
+
+  The application provides automated fallback to OCRmyPDF when an uploaded PDF does not contain an extractable text layer.
+
+  To test OCR handling before uploading real papers:
+- **OCR Dependencies (Tesseract OCR & Ghostscript)**:
+  `ocrmypdf` (in `backend/requirements.txt`) processes scanned/image-only PDFs (standard digital PDFs do not require OCR):
+  - **Ubuntu / Debian**: `sudo apt-get install -y tesseract-ocr ghostscript`
+  - **Fedora / RHEL**: `sudo dnf install -y tesseract ghostscript`
+  - **macOS**: `brew install tesseract ghostscript`
+  - **Windows**: `winget install UB-Mannheim.TesseractOCR ArtifexSoftware.Ghostscript` (or use WSL2)
 - **OpenAI API Key**: Required for live summarization, query classification, and chat answering. (All test suites run completely offline with mocked providers.)
 
 ---
@@ -308,12 +133,12 @@ cd backend
 python3 -m venv venv
 source venv/bin/activate
 
-# Install dependencies
+# Install dependencies (includes ocrmypdf, pymupdf, chromadb, fastapi)
 pip install -r requirements.txt
 
 # Configure environment variables
 cp .env.example .env
-# Edit .env and supply your OPENAI_API_KEY and AUTH_SECRET_KEY
+# Edit .env and supply your OPENAI_API_KEY
 
 # Start backend dev server
 uvicorn app.main:app --reload --port 8000
@@ -341,46 +166,6 @@ npm run dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000) in your browser.
-
----
-
-## Environment Variables
-
-### Backend (`backend/.env`)
-
-| Variable | Default | Description |
-| :--- | :--- | :--- |
-| `LLM_PROVIDER` | `openai` | LLM provider backend (`openai`). |
-| `OPENAI_API_KEY` | `""` | API key for OpenAI or OpenAI-compatible provider. |
-| `OPENAI_BASE_URL` | `https://api.openai.com/v1` | Base URL for OpenAI-compatible endpoint. |
-| `MODEL_NAME` | `gpt-4o` | Chat & summarization model name. |
-| `REWRITE_MODEL` | `gpt-4o-mini` | Model used for intent classification and conversational query rewriting. |
-| `REWRITE_HISTORY_TURNS` | `3` | Conversation history turns sent to classifier. |
-| `EMBEDDING_MODEL` | `text-embedding-3-small` | Vector embedding model name. |
-| `MAX_UPLOAD_MB` | `20` | Maximum allowed PDF file size in MB. |
-| `CITATION_MAX_DISTANCE` | `0.6` | Cosine distance cutoff threshold for citation retrieval. |
-| `CORS_ORIGINS` | `http://localhost:3000` | Comma-separated allowed origins. |
-| `SUMMARY_CACHE_DIR` | `.cache/summaries` | Directory for disk-persisted summaries. |
-| `CREDIBILITY_CACHE_DIR` | `.cache/credibility` | Directory for disk-persisted bibliometric cache. |
-| `SEMANTIC_SCHOLAR_API_KEY` | `""` | Optional API key for bibliometric providers. |
-| `CHROMA_DIR` | `.chroma` | Directory for persistent ChromaDB storage. |
-| `OCR_ENABLED` | `true` | Whether Tesseract OCR is enabled for scanned documents. |
-| `OCR_TIMEOUT_SECONDS` | `120` | Maximum seconds allocated for OCR processing. |
-| `ENVIRONMENT` | `development` | Runtime environment (`development` or `production`). |
-| `AUTH_SECRET_KEY` | `""` | Secret key for signing JWT tokens. Required in production. |
-| `AUTH_TOKEN_TTL_MINUTES` | `60` | Session token time-to-live in minutes. |
-| `DATABASE_URL` | `sqlite:///./data/app.db` | SQLAlchemy database URL for users and ownership. |
-
-To generate a secure random string for `AUTH_SECRET_KEY`:
-```bash
-python -c "import secrets; print(secrets.token_urlsafe(48))"
-```
-
-### Frontend (`frontend/.env.local`)
-
-| Variable | Default | Description |
-| :--- | :--- | :--- |
-| `NEXT_PUBLIC_API_BASE_URL` | `http://localhost:8000` | Backend API URL reachable by the browser. |
 
 ---
 
@@ -427,24 +212,9 @@ npm run build
 
 ---
 
-## Citation Threshold Calibration
-
-`CITATION_MAX_DISTANCE` controls the cosine distance cutoff for retrieval. If you change `EMBEDDING_MODEL` or tune sensitivity, run the built-in calibration script:
-
-```bash
-cd backend
-python scripts/calibrate_citation_threshold.py \
-  --doc-hash <DOC_HASH> \
-  --on-topic "What were the key results?" "What was the sample size?" \
-  --off-topic "What is the capital of France?" "How to bake a cake?"
-```
-
-The script reports group distances and suggests an optimal cutoff threshold.
-
----
-
 ## Known Considerations
 
 - **Single-Server SQLite**: User records and document ownership are stored in local SQLite (`data/app.db`), optimized for single-instance deployments.
+
 - **In-Memory Rate Limiting**: The authentication failure rate limiter maintains state in memory and resets upon server restart.
-- **Scanned PDFs & OCR**: Scanned PDFs are processed with OCR. Accuracy depends on scan quality. OCR processing is slower than native text extraction.
+- **Scanned PDFs & OCR**: Scanned PDFs are processed with OCRmyPDF. Accuracy depends on scan quality and image resolution. OCR processing is naturally slower than native vector text extraction.
