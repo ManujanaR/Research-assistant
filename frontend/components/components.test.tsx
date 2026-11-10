@@ -731,6 +731,54 @@ describe("Frontend UI Components", () => {
       expect(screen.queryByTestId("chat-empty-state")).toBeNull();
     });
 
+    it("the center upload button and mobile card are hidden at lg and rendered below lg", () => {
+      render(<ChatPanel docHash="" documentStatus="none" />);
+      const card = screen.getByTestId("chat-upload-card");
+      expect(card.className).toContain("lg:hidden");
+
+      const uploadBtn = screen.getByRole("button", {
+        name: "Upload Research Paper",
+      });
+      expect(uploadBtn).toBeDefined();
+      expect(uploadBtn.className).toContain("lg:hidden");
+      expect(uploadBtn.getAttribute("aria-label")).toBe("Upload Research Paper");
+    });
+
+    it("the desktop zero-state helper text is visible at lg with no redundant button", () => {
+      render(<ChatPanel docHash="" documentStatus="none" />);
+      const desktopZeroState = screen.getByTestId("chat-desktop-zero-state");
+      expect(desktopZeroState.className).toContain("hidden");
+      expect(desktopZeroState.className).toContain("lg:flex");
+
+      const helperText = screen.getByText(
+        "Upload a research paper from the sidebar to begin analysis and Q&A."
+      );
+      expect(helperText).toBeDefined();
+      expect(desktopZeroState.contains(helperText)).toBe(true);
+
+      // Verify no button is present in the desktop zero-state
+      expect(within(desktopZeroState).queryByRole("button")).toBeNull();
+    });
+
+    it("the scrolling message container retains unclipped overflow behavior and wraps empty state in inner layout", () => {
+      render(<ChatPanel docHash="" documentStatus="none" />);
+      const messageContainer = screen.getByTestId("chat-messages-container");
+      expect(messageContainer.className).toContain("overflow-y-auto");
+      expect(messageContainer.className).toContain("min-h-0");
+      expect(messageContainer.className).not.toContain("justify-center");
+      expect(messageContainer.className).not.toContain("items-center");
+
+      const zeroStateWrapper = screen.getByTestId("chat-zero-state");
+      expect(zeroStateWrapper.className).toContain("flex");
+      expect(zeroStateWrapper.className).toContain("flex-col");
+      expect(zeroStateWrapper.className).toContain("items-center");
+      expect(zeroStateWrapper.className).toContain("justify-center");
+      expect(zeroStateWrapper.className).toContain("h-full");
+      expect(zeroStateWrapper.className).toContain("min-h-0");
+      expect(zeroStateWrapper.className).toContain("text-center");
+      expect(zeroStateWrapper.className).toContain("p-6");
+    });
+
     it("the placeholder correctly updates across none, indexing, and ready", () => {
       const { rerender } = render(<ChatPanel docHash="" documentStatus="none" />);
       expect(

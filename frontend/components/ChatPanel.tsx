@@ -254,7 +254,10 @@ export function ChatPanel({
       </div>
 
       {/* Message List */}
-      <div className="flex-1 p-3.5 sm:p-5 overflow-y-auto space-y-4 min-h-0 bg-bg-base/40">
+      <div
+        data-testid="chat-messages-container"
+        className="flex-1 p-3.5 sm:p-5 overflow-y-auto space-y-4 min-h-0 bg-bg-base/40"
+      >
         {messages.length > 0 ? (
           messages.map((msg) => {
             const hasSources =
@@ -337,10 +340,24 @@ export function ChatPanel({
           })
         ) : effectiveStatus === "none" ? (
           <div
-            data-testid="chat-upload-card"
-            className="flex flex-col items-center justify-center h-full text-center p-6 sm:p-8"
+            data-testid="chat-zero-state"
+            className="flex flex-col items-center justify-center h-full min-h-0 text-center p-6"
           >
-            <div className="max-w-sm w-full bg-surface-elevated border border-border-subtle rounded-2xl p-6 sm:p-8 shadow-sm flex flex-col items-center text-center">
+            {/* Desktop Zero-State: clean guidance line with high contrast */}
+            <div
+              data-testid="chat-desktop-zero-state"
+              className="hidden lg:flex flex-col items-center justify-center max-w-md mx-auto"
+            >
+              <p className="text-sm sm:text-base font-medium text-slate-700 dark:text-slate-300 leading-relaxed">
+                Upload a research paper from the sidebar to begin analysis and Q&A.
+              </p>
+            </div>
+
+            {/* Mobile & Compact Zero-State: centered card with upload button */}
+            <div
+              data-testid="chat-upload-card"
+              className="lg:hidden max-w-sm w-full bg-surface-elevated border border-border-subtle rounded-2xl p-6 sm:p-8 shadow-sm flex flex-col items-center text-center"
+            >
               <div className="w-12 h-12 rounded-2xl bg-blue-50 dark:bg-accent-blue/10 text-blue-600 dark:text-accent-blue flex items-center justify-center mb-4 border border-blue-100 dark:border-accent-blue/20">
                 <UploadCloud className="w-6 h-6" />
               </div>
@@ -355,7 +372,7 @@ export function ChatPanel({
                 onClick={handleUploadClick}
                 aria-label="Upload Research Paper"
                 data-testid="upload-research-paper-button"
-                className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white dark:bg-accent-blue dark:hover:bg-blue-400 dark:text-black font-semibold text-sm transition-all focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:focus:ring-offset-black shadow-sm active:scale-95"
+                className="inline-flex lg:hidden items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white dark:bg-accent-blue dark:hover:bg-blue-400 dark:text-black font-semibold text-sm transition-all focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:focus:ring-offset-black shadow-sm active:scale-95"
               >
                 <UploadCloud className="w-4 h-4" />
                 Upload Research Paper
@@ -365,7 +382,7 @@ export function ChatPanel({
         ) : effectiveStatus === "indexing" ? (
           <div
             data-testid="chat-indexing-state"
-            className="flex flex-col items-center justify-center h-full text-center text-text-muted p-6 sm:p-8"
+            className="flex flex-col items-center justify-center h-full min-h-0 text-center text-text-muted p-6"
           >
             <Loader2 className="w-8 h-8 animate-spin text-blue-600 dark:text-accent-blue mb-3" />
             <h3 className="text-base font-semibold text-text-primary mb-1">
@@ -378,7 +395,7 @@ export function ChatPanel({
         ) : (
           <div
             data-testid="chat-empty-state"
-            className="flex flex-col items-center justify-center h-full text-center text-text-muted p-6 sm:p-8"
+            className="flex flex-col items-center justify-center h-full min-h-0 text-center text-text-muted p-6"
           >
             <div className="text-4xl mb-3">👋</div>
             <h3 className="text-lg font-semibold text-text-primary mb-1">
