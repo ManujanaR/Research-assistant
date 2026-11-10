@@ -1361,3 +1361,303 @@ def test_contextual_query_rewriting_broad_and_offtopic_e2e(
 
     finally:
         app.dependency_overrides.clear()
+
+
+# =============================================================================
+# Universal Language Policy Unit Tests
+# Note: These unit tests verify the prompt contract, instruction assembly, and
+# output rules using deterministic fake models; live model linguistic adherence
+# is validated via the manual verification check.
+# =============================================================================
+
+
+def test_universal_language_policy_prompt_contract() -> None:
+    """The answer system prompt explicitly contains all Universal Language Policy instructions."""
+    from app.services.qa import format_chat_system_prompt
+
+    prompt = format_chat_system_prompt()
+
+    assert "5. Universal Language Policy:" in prompt
+    assert "Reply in the language the user writes in." in prompt
+    assert "Use the native script of that language for the answer text." in prompt
+    assert (
+        "Do not output romanised or transliterated slang (e.g., no phonetic Singlish)."
+        in prompt
+    )
+    assert (
+        "Keep specialised academic terms, symbols, variable names, and named entities in their standard English form."
+        in prompt
+    )
+    assert (
+        "If you are not confident in the native-script rendering of a technical term, keep that term in English."
+        in prompt
+    )
+    assert (
+        "Grounding is unchanged: answers come only from the retrieved passages, in any language."
+        in prompt
+    )
+    assert (
+        'The fallback sentence stays exactly as it is in English ("The uploaded paper does not contain information to answer this question.") for every language. Do not translate it.'
+        in prompt
+    )
+
+
+def test_sinhala_question_triggers_language_policy_and_preserves_technical_terms(
+    auth_client: AuthenticatedTestClient, tmp_path: Path
+) -> None:
+    """A Sinhala question triggers the language policy prompt contract, and English technical terms survive inside the response."""
+    doc_hash = "2" * 64
+    chroma_dir = tmp_path / "chroma_sinhala_test"
+    chroma_client = chromadb.PersistentClient(path=str(chroma_dir))
+    embedder = RecordingEmbedder()
+
+    asyncio.run(
+        index_document(
+            doc_hash=doc_hash,
+            chunks=[
+                {
+                    "text": (
+                        "The Transformer architecture utilizes Multi-Head Attention and "
+                        "Positional Encoding to capture long-range token dependencies."
+                    ),
+                    "page": 3,
+                }
+            ],
+            embed_fn=embedder,
+            client=chroma_client,
+        )
+    )
+    auth_client.record_ownership(doc_hash)
+
+    # Simulated response adhering to native script + preserved English technical terms
+    sinhala_grounded_answer = (
+        "මෙම පර්යේෂණයේදී Transformer architecture සහ Multi-Head Attention "
+        "භාවිතා කර ඇති අතර Positional Encoding මගින් long-range token dependencies හසුරුවනු ලැබේ."
+    )
+
+    sinhala_question = "මෙම paper එකෙහි Transformer architecture එක සහ Multi-Head Attention ක්‍රියාත්මක වන්නේ කෙසේද?"
+
+    fake_client = RecordingChatClient(
+        rewrite_output={
+            "intent": "document_question",
+            "query": "Transformer architecture Multi-Head Attention Positional Encoding",
+        },
+        stream_tokens=[sinhala_grounded_answer],
+    )
+
+    app.dependency_overrides[get_chroma_client] = lambda: chroma_client
+    app.dependency_overrides[get_embedding_function] = lambda: embedder
+    app.dependency_overrides[get_chat_llm_client] = lambda: fake_client
+
+    try:
+        response = auth_client.post(
+            "/api/chat",
+            json={
+                "doc_hash": doc_hash,
+                "message": sinhala_question,
+                "history": [],
+            },
+        )
+        assert response.status_code == 200
+
+        # Verify answer call prompt contract
+        assert len(fake_client.stream_calls) == 1
+        stream_call = fake_client.stream_calls[0]
+        messages = stream_call["messages"]
+        system_content = messages[0]["content"]
+
+        # Universal language policy instructions must be active in system prompt
+        assert "Universal Language Policy:" in system_content
+        assert "Reply in the language the user writes in." in system_content
+        assert (
+            "Keep specialised academic terms, symbols, variable names, and named entities in their standard English form."
+            in system_content
+        )
+
+        # Raw user question in Sinhala passed directly to user turn
+        assert messages[-1]["content"] == f"Question: {sinhala_question}"
+
+        # Stream output verification: native script answer with English terms preserved
+        events = parse_sse_events(response.text)
+        tokens = [e for e in events if e["event"] == "token"]
+        answer_text = "".join(e["data"]["text"] for e in tokens)
+        assert answer_text == sinhala_grounded_answer
+
+        # Verify English technical terms survive intact
+        assert "Transformer architecture" in answer_text
+        assert "Multi-Head Attention" in answer_text
+        assert "Positional Encoding" in answer_text
+
+        # Verify sources are attached
+        sources = [e for e in events if e["event"] == "sources"]
+        assert len(sources) == 1
+        assert len(sources[0]["data"]) > 0
+        assert sources[0]["data"][0]["page_number"] == 3
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_sinhala_question_fallback_remains_exact_english_sentence(
+    auth_client: AuthenticatedTestClient, tmp_path: Path
+) -> None:
+    """When the uploaded paper lacks information, the fallback remains the exact English sentence even for a Sinhala question."""
+    doc_hash = "3" * 64
+    chroma_dir = tmp_path / "chroma_sinhala_fallback_test"
+    chroma_client = chromadb.PersistentClient(path=str(chroma_dir))
+    embedder = RecordingEmbedder()
+
+    asyncio.run(
+        index_document(
+            doc_hash=doc_hash,
+            chunks=[
+                {
+                    "text": "This paper analyzes classical sorting algorithms such as Quicksort and Mergesort.",
+                    "page": 1,
+                }
+            ],
+            embed_fn=embedder,
+            client=chroma_client,
+        )
+    )
+    auth_client.record_ownership(doc_hash)
+
+    sinhala_absent_question = (
+        "මෙහි quantum computing algorithms සහ qubits ගැන සඳහන් වන්නේ කුමක්ද?"
+    )
+
+    # Model outputs the exact English fallback per the Universal Language Policy
+    fake_client = RecordingChatClient(
+        rewrite_output={
+            "intent": "document_question",
+            "query": "quantum computing algorithms qubits",
+        },
+        stream_tokens=[FALLBACK_GROUNDING_MESSAGE],
+    )
+
+    app.dependency_overrides[get_chroma_client] = lambda: chroma_client
+    app.dependency_overrides[get_embedding_function] = lambda: embedder
+    app.dependency_overrides[get_chat_llm_client] = lambda: fake_client
+
+    try:
+        response = auth_client.post(
+            "/api/chat",
+            json={
+                "doc_hash": doc_hash,
+                "message": sinhala_absent_question,
+                "history": [],
+            },
+        )
+        assert response.status_code == 200
+
+        # System prompt instructs that fallback sentence must not be translated
+        stream_call = fake_client.stream_calls[0]
+        system_content = stream_call["messages"][0]["content"]
+        assert (
+            'The fallback sentence stays exactly as it is in English ("The uploaded paper does not contain information to answer this question.") for every language. Do not translate it.'
+            in system_content
+        )
+
+        events = parse_sse_events(response.text)
+        tokens = [e for e in events if e["event"] == "token"]
+        answer_text = "".join(e["data"]["text"] for e in tokens)
+
+        # Fallback text must strictly remain the exact English sentence
+        assert answer_text == FALLBACK_GROUNDING_MESSAGE
+        assert answer_text == (
+            "The uploaded paper does not contain information to answer this question."
+        )
+
+        # Sources must be empty for fallback answers
+        sources = [e for e in events if e["event"] == "sources"]
+        assert len(sources) == 1
+        assert sources[0]["data"] == []
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_romanised_question_directed_to_native_script_without_slang(
+    auth_client: AuthenticatedTestClient, tmp_path: Path
+) -> None:
+    """A Romanised question (e.g. phonetic Singlish) is directed to be answered in native script without slang."""
+    doc_hash = "4" * 64
+    chroma_dir = tmp_path / "chroma_romanised_test"
+    chroma_client = chromadb.PersistentClient(path=str(chroma_dir))
+    embedder = RecordingEmbedder()
+
+    asyncio.run(
+        index_document(
+            doc_hash=doc_hash,
+            chunks=[
+                {
+                    "text": "The methodology employs cross-entropy loss optimization using Adam optimizer with warmup.",
+                    "page": 5,
+                }
+            ],
+            embed_fn=embedder,
+            client=chroma_client,
+        )
+    )
+    auth_client.record_ownership(doc_hash)
+
+    # Phonetic Singlish query
+    romanised_query = "Meka methodology eka mokakda kiyala explain karanna puluwanda?"
+
+    # Model responds in native Sinhala script preserving technical terms, not phonetic slang
+    native_script_answer = (
+        "මෙම පර්යේෂණයේ methodology කොටසෙහි Adam optimizer සහ cross-entropy loss optimization "
+        "භාවිතා කර ආකෘතිය පුහුණු කරනු ලැබේ."
+    )
+
+    fake_client = RecordingChatClient(
+        rewrite_output={
+            "intent": "document_question",
+            "query": "methodology cross-entropy loss Adam optimizer",
+        },
+        stream_tokens=[native_script_answer],
+    )
+
+    app.dependency_overrides[get_chroma_client] = lambda: chroma_client
+    app.dependency_overrides[get_embedding_function] = lambda: embedder
+    app.dependency_overrides[get_chat_llm_client] = lambda: fake_client
+
+    try:
+        response = auth_client.post(
+            "/api/chat",
+            json={
+                "doc_hash": doc_hash,
+                "message": romanised_query,
+                "history": [],
+            },
+        )
+        assert response.status_code == 200
+
+        # Verify prompt instructions for native script and no slang
+        stream_call = fake_client.stream_calls[0]
+        system_content = stream_call["messages"][0]["content"]
+        assert (
+            "Use the native script of that language for the answer text."
+            in system_content
+        )
+        assert (
+            "Do not output romanised or transliterated slang (e.g., no phonetic Singlish)."
+            in system_content
+        )
+
+        # Raw Romanised question passed to LLM
+        assert stream_call["messages"][-1]["content"] == f"Question: {romanised_query}"
+
+        # Streamed output is in native script with English terms preserved
+        events = parse_sse_events(response.text)
+        tokens = [e for e in events if e["event"] == "token"]
+        answer_text = "".join(e["data"]["text"] for e in tokens)
+        assert answer_text == native_script_answer
+        assert "Adam optimizer" in answer_text
+        assert "cross-entropy loss optimization" in answer_text
+
+        # Verify sources are attached
+        sources = [e for e in events if e["event"] == "sources"]
+        assert len(sources) == 1
+        assert len(sources[0]["data"]) > 0
+        assert sources[0]["data"][0]["page_number"] == 5
+    finally:
+        app.dependency_overrides.clear()
