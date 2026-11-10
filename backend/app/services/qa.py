@@ -780,6 +780,15 @@ async def retrieve(
     return retrieved
 
 
+SECTION_TARGET_EXPANSIONS: dict[str, str] = {
+    "abstract": "Abstract background objective methods results conclusion",
+    "results": "Results findings data analysis outcomes",
+    "findings": "Results findings data analysis outcomes",
+    "conclusion": "Conclusion summary implications findings",
+    "methodology": "Methodology methods participants instruments procedure design",
+}
+
+
 async def retrieve_multi_section(
     doc_hash: str,
     targets: list[str] | None = None,
@@ -791,9 +800,10 @@ async def retrieve_multi_section(
 ) -> list[RetrievedChunk]:
     """Execute dual or multi-target retrieval for cross-section comparison.
 
-    Queries retrieve() for each target section with clean section names,
-    deduplicates chunks by chunk ID, filters by relevance_threshold,
-    and returns chunks sorted by distance ascending.
+    Expands single-word section targets semantically, queries retrieve() for
+    each target section, deduplicates chunks by chunk ID, filters by
+    relevance_threshold, ensures page 1 abstract chunk is present if 'abstract'
+    is in targets, and returns chunks sorted by distance ascending.
     """
     target_list = targets if targets is not None else kwargs.get("comparison_targets")
     valid_targets = [
@@ -812,9 +822,10 @@ async def retrieve_multi_section(
 
     for target in valid_targets:
         clean_target = target.strip()
+        search_query = SECTION_TARGET_EXPANSIONS.get(clean_target.lower(), clean_target)
         chunks = await retrieve(
             doc_hash=doc_hash,
-            query=clean_target,
+            query=search_query,
             embed_fn=effective_embed_fn,
             top_k=effective_top_k,
             client=client,
@@ -823,6 +834,51 @@ async def retrieve_multi_section(
             if chunk.distance <= relevance_threshold and chunk.id not in seen_ids:
                 seen_ids.add(chunk.id)
                 merged.append(chunk)
+
+    has_abstract = any(
+        t.strip().lower() == "abstract" or "abstract" in t.strip().lower()
+        for t in valid_targets
+    )
+    if has_abstract and not any(chunk.page == 1 for chunk in merged):
+        try:
+            col_name = get_chroma_collection_name(doc_hash)
+            chroma_client = client or chromadb.PersistentClient(
+                path=get_settings().chroma_dir
+            )
+            col = chroma_client.get_collection(col_name)
+            p1_res = col.get(where={"page": 1}, limit=2)
+            p1_ids = p1_res.get("ids") or []
+            p1_docs = p1_res.get("documents") or []
+            p1_metas = p1_res.get("metadatas") or []
+
+            for doc_id, doc_text, meta in zip(p1_ids, p1_docs, p1_metas, strict=False):
+                str_id = str(doc_id)
+                if str_id and str_id not in seen_ids:
+                    seen_ids.add(str_id)
+                    page_num = (
+                        int(meta.get("page", 1))
+                        if meta and isinstance(meta, dict)
+                        else 1
+                    )
+                    merged.append(
+                        RetrievedChunk(
+                            text=str(doc_text),
+                            page=page_num,
+                            distance=0.0,
+                            id=str_id,
+                        )
+                    )
+        except (
+            chromadb.errors.ChromaError,
+            ValueError,
+            KeyError,
+            AttributeError,
+        ) as exc:
+            logger.warning(
+                "Failed to guarantee Page 1 abstract chunk for %s: %s",
+                doc_hash,
+                exc,
+            )
 
     merged.sort(key=lambda c: c.distance)
     return merged
