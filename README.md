@@ -171,7 +171,7 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
 
 ## Testing & Quality Assurance
 
-Both the backend and frontend include comprehensive automated test suites that run without requiring live network access or paid API keys.
+Automated CI/CD is configured with **GitHub Actions** to run tests and type checks on every commit before deployment to **AWS** hosting (EC2). Both the backend and frontend include comprehensive automated test suites that run without requiring live network access or paid API keys.
 
 ### Backend Verification
 
