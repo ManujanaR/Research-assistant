@@ -780,6 +780,54 @@ async def retrieve(
     return retrieved
 
 
+async def retrieve_multi_section(
+    doc_hash: str,
+    targets: list[str] | None = None,
+    embed_fn: EmbedFn | None = None,
+    client: ClientAPI | None = None,
+    top_k: int = 3,
+    relevance_threshold: float = 2.0,
+    **kwargs: Any,
+) -> list[RetrievedChunk]:
+    """Execute dual or multi-target retrieval for cross-section comparison.
+
+    Queries retrieve() for each target section with clean section names,
+    deduplicates chunks by chunk ID, filters by relevance_threshold,
+    and returns chunks sorted by distance ascending.
+    """
+    target_list = targets if targets is not None else kwargs.get("comparison_targets")
+    valid_targets = [
+        str(t).strip() for t in (target_list or []) if t and str(t).strip()
+    ]
+    if not valid_targets:
+        return []
+
+    effective_top_k = kwargs.get("target_top_k", top_k)
+    effective_embed_fn = embed_fn if embed_fn is not None else kwargs.get("embed_fn")
+    if effective_embed_fn is None:
+        raise ValueError("embed_fn must be provided to retrieve_multi_section.")
+
+    seen_ids: set[str] = set()
+    merged: list[RetrievedChunk] = []
+
+    for target in valid_targets:
+        clean_target = target.strip()
+        chunks = await retrieve(
+            doc_hash=doc_hash,
+            query=clean_target,
+            embed_fn=effective_embed_fn,
+            top_k=effective_top_k,
+            client=client,
+        )
+        for chunk in chunks:
+            if chunk.distance <= relevance_threshold and chunk.id not in seen_ids:
+                seen_ids.add(chunk.id)
+                merged.append(chunk)
+
+    merged.sort(key=lambda c: c.distance)
+    return merged
+
+
 CHAT_SYSTEM_PROMPT = CHAT_SYSTEM_PROMPT_TEMPLATE
 
 OVERVIEW_SYSTEM_PROMPT = """You are a helpful research assistant providing an overview of an academic paper.
