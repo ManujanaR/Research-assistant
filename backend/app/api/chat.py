@@ -1,4 +1,5 @@
 import logging
+import re
 from typing import Annotated, Any
 
 import openai
@@ -31,6 +32,7 @@ from app.services.qa import (
     get_title_authors_abstract,
     rebuild_text_from_chroma,
     retrieve,
+    retrieve_multi_section,
     stream_chat_response,
 )
 
@@ -182,13 +184,47 @@ async def chat(
     search_query = classification.query.strip() or request.message
 
     try:
-        chunks = await retrieve(
-            doc_hash=request.doc_hash,
-            query=search_query,
-            embed_fn=embed_fn,
-            top_k=5,
-            client=chroma_client,
-        )
+        if classification.is_comparative:
+            targets = [
+                str(t).strip()
+                for t in (classification.comparison_targets or [])
+                if t and str(t).strip()
+            ]
+            if not targets:
+                query_source = (classification.query or "").strip() or request.message
+                parts = re.split(
+                    r"\s+(?:and|vs\.?)\s+|,\s*", query_source, flags=re.IGNORECASE
+                )
+                cleaned = [
+                    re.sub(
+                        r"^(?:compare|contrast|evaluate|check)\s+(?:the\s+)?",
+                        "",
+                        p.strip(),
+                        flags=re.IGNORECASE,
+                    ).strip()
+                    for p in parts
+                    if p.strip()
+                ]
+                targets = [
+                    re.sub(r"^the\s+", "", c, flags=re.IGNORECASE).strip()
+                    for c in cleaned
+                    if c
+                ]
+            chunks = await retrieve_multi_section(
+                doc_hash=request.doc_hash,
+                targets=targets,
+                embed_fn=embed_fn,
+                client=chroma_client,
+                top_k=3,
+            )
+        else:
+            chunks = await retrieve(
+                doc_hash=request.doc_hash,
+                query=search_query,
+                embed_fn=embed_fn,
+                top_k=5,
+                client=chroma_client,
+            )
     except EmbeddingDimensionMismatchError as exc:
         raise HTTPException(
             status_code=409,
@@ -235,9 +271,12 @@ async def chat(
     relevant_chunks = [
         c for c in chunks if c.distance <= settings.citation_max_distance
     ]
-    sorted_relevant = sorted(relevant_chunks, key=lambda c: c.distance)[:3]
+    max_relevant = 6 if classification.is_comparative else 3
+    sorted_relevant = sorted(relevant_chunks, key=lambda c: c.distance)[:max_relevant]
 
-    sources = extract_sources(sorted_relevant, question=request.message, max_sources=3)
+    sources = extract_sources(
+        sorted_relevant, question=request.message, max_sources=max_relevant
+    )
     messages = assemble_chat_messages(
         question=request.message,
         history=request.history,
