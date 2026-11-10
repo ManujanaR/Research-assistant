@@ -273,4 +273,86 @@ Errors appear inline above the button, with an icon and text. Colour is not the 
 - **Fallback:** If inline rendering fails or the browser doesn’t support it, show “Your browser can’t show this PDF inline.” with an “Open in new tab” link.
 - **Dismissal:** Escape, the close button, or a backdrop click. Focus returns to the View PDF button.
 
+---
+
+## 6. Mathematical Notation & Rendering Architecture
+
+Research papers in computer science, physics, economics, and mathematics frequently present equations, loss functions, and Greek variable symbols. The frontend provides native LaTeX rendering across both structured summaries and conversational chat bubbles.
+
+### 6.1 Package Architecture
+- **Rendering Stack**: `react-markdown` (v10) with `remark-math` (v6), `rehype-katex` (v7), and `katex` (v0.19).
+- **Global Stylesheet**: `katex/dist/katex.min.css` is imported once in `frontend/app/layout.tsx` to furnish all necessary font metrics, glyphs, and layout rules for KaTeX math markup.
+
+### 6.2 Preprocessing & Delimiter Normalization
+LLMs output mathematical notation in diverse formats, most commonly LaTeX inline delimiters `\( ... \)` and block delimiters `\[ ... \]`, alongside standard dollar notation (`$...$` and `$$...$$`).
+- A dedicated utility function `preprocessLaTeX()` in `frontend/components/MarkdownRenderer.tsx` handles normalization before markdown parsing:
+  1. **Code Block Isolation**: Splits incoming text on triple backticks (```) and inline code spans (`` ` ``) so that syntax within code snippets is preserved verbatim.
+  2. **Display Block Normalization**: Transforms `\[...\]` (and `\\[...\\]`) into display math fences `\n\n$$\n...\n$$\n\n`, ensuring valid CommonMark flow block boundaries.
+  3. **Inline Normalization**: Transforms `\(...\)` (and `\\(...\\)`) into trimmed inline dollar syntax `$ ... $`.
+  4. **Display Math Overflow Handling**: Display math blocks (`.katex-display`) are styled with horizontal scrolling (`overflow-x: auto`) to prevent viewport breakage on narrow mobile screens or split-panel views.
+
+---
+
+## 7. Content Security Boundary & Untrusted Output Sanitization
+
+A fundamental security principle of the application is that **all document text and LLM outputs are treated as untrusted content**.
+
+### 7.1 XSS Elimination via Markdown AST
+- **No Raw HTML Execution**: `rehype-raw` is strictly omitted from the markdown rendering pipeline.
+- **Entity Escaping**: When untrusted inputs containing raw HTML tags (e.g., `<script>`, `<img onerror=...>`, `<iframe>`) are processed by `react-markdown`, they are parsed as literal text nodes and rendered as escaped entities (`&lt;script&gt;`).
+- **CSS Sandboxing**: KaTeX HTML output generates isolated `<span class="katex">` and MathML `<math>` nodes without injecting unsafe inline executable scripts.
+
+---
+
+## 8. Universal Multilingual QA Policy & Prompt Contract
+
+The Q&A service in `backend/app/services/qa.py` enforces a universal language policy governed by prompt contract invariants, eliminating fragile language keyword dictionaries or if-else language branches:
+
+1. **Native Script Enforcement**: When a user queries in a non-English language (e.g., Sinhala, Tamil, Japanese, Spanish), the model replies in that language using its official native script (e.g., Sinhala Unicode script `සිංහල අකුරු`).
+2. **Phonetic Slang Suppression**: If a user submits a question using romanised or transliterated slang (e.g., phonetic Singlish or Hinglish), the model identifies the underlying language and replies strictly in native script, never in Latin/romanised characters.
+3. **English Academic & Technical Term Preservation**: Specialised technical terms, architectural components, variable names, framework acronyms, and named entities (e.g., *Transformer architecture*, *Multi-Head Attention*, *BLEU score*, *Adam optimizer*) are kept in standard English form to avoid awkward transliterations and preserve precision.
+4. **Immutable English Fallback Contract**: When retrieved excerpts contain zero supporting evidence for a question, the model returns strictly the exact English fallback string:
+   `"The uploaded paper does not contain information to answer this question."`
+   This string is **never translated**, ensuring downstream heuristics (`is_unusable_or_negative_reply` and `should_send_sources`) reliably identify ungrounded turns and suppress citations across all languages.
+5. **Zero Hardcoded Heuristics**: No language-specific keyword list or if-else routing exists in Python code; all linguistic adherence is steered through system prompt instructions and evaluated via test assertions.
+
+---
+
+## 9. Standalone Visual Verification & Testability
+
+To verify visual math rendering and layout integrity deterministically:
+- Dedicated preview routes (such as `/math-preview/summary` and `/math-preview/chat`) render sample papers containing complex multi-line formulas, summations, matrices, and integral equations.
+- Headless Chrome (`google-chrome --headless=new --screenshot=...`) captures high-resolution screenshots during automated or manual verification phases to guarantee pixel-accurate rendering across dark and light themes without requiring live model invocations.
+
+---
+
+## 10. Containerization & Cloud Deployment Architecture (Docker & AWS)
+
+The application is structured for containerized cloud deployment on AWS infrastructure:
+
+### 10.1 Multi-Stage Docker Architecture
+- **Backend Dockerfile**:
+  - Base: `python:3.11-slim` or `python:3.12-slim`.
+  - System Dependencies: Installs `tesseract-ocr`, `tesseract-ocr-eng`, `libgl1`, and poppler utilities for PDF OCR processing.
+  - Runtime: Non-root user execution running `uvicorn app.main:app --host 0.0.0.0 --port 8000` with production ASGI settings.
+- **Frontend Dockerfile**:
+  - Base: `node:20-alpine`.
+  - Build Stage: Runs `npm ci` and `npm run build` using Next.js standalone output mode (`output: "standalone"` in `next.config.js`).
+  - Runner Stage: Copies standalone bundle and static assets, running `node server.js` on port 3000 as a non-root user.
+
+### 10.2 AWS Deployment Topology
+- **Compute Layer**:
+  - **AWS ECS (Elastic Container Service) with AWS Fargate**: Serverless container execution for backend and frontend services behind an Application Load Balancer (ALB).
+  - Alternative: **AWS App Runner** for fully managed auto-scaling container services.
+- **Persistence & Storage**:
+  - **Relational DB**: Amazon Aurora Serverless PostgreSQL or Amazon RDS PostgreSQL for user authentication and document ownership (migrating from local SQLite `DATABASE_URL`).
+  - **Vector Storage**: ChromaDB persisted via Amazon EFS (Elastic File System) volume mount, or migration to Amazon OpenSearch Service / pgvector.
+  - **Object Storage**: Amazon S3 for ephemeral PDF temporary staging and cache backups with automated lifecycle expiration policies.
+- **Configuration & Secrets**:
+  - Secrets (`OPENAI_API_KEY`, `AUTH_SECRET_KEY`) injected securely via AWS Systems Manager Parameter Store or AWS Secrets Manager into container tasks.
+  - Environment variables (`LLM_PROVIDER`, `MODEL_NAME`, `MAX_UPLOAD_MB`) configured via ECS task definitions.
+- **Edge & Security**:
+  - Amazon CloudFront CDN terminating TLS with AWS Certificate Manager (ACM), routing `/api/*` to the backend ALB and all other routes to the Next.js frontend.
+
+
 

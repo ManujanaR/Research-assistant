@@ -145,6 +145,22 @@ class SummarySchema(BaseModel):
 - Endpoints stream tokens to the frontend via Server-Sent Events (SSE) using FastAPI's `StreamingResponse`.
 - Chunks deliver text tokens progressively, followed by a final JSON metadata event containing the cited sources.
 
+### Mathematical Notation Rendering Acceptance Criteria
+1. **Delimiter Support**: Both inline LaTeX `\(...\)` (or `$ ... $`) and display block LaTeX `\[...\]` (or `$$...$$`) must render as native KaTeX mathematical notation.
+2. **Surface Coverage**: Math rendering must be active across all five summary sections in `SummaryView` and throughout user and assistant message bubbles in `ChatPanel`.
+3. **Display Math Overflow**: Wide formulas must be styled with horizontal overflow (`overflow-x: auto`) to prevent viewport breakage.
+4. **Code Block Isolation**: Math delimiters inside code spans (`` ` ``) and code fences (```` ``` ````) must remain unparsed and preserved as literal code text.
+5. **Security Invariant**: `rehype-raw` must NOT be enabled. Strings containing raw HTML tags like `<script>` or `<img onerror=...>` must render as plain text entities without DOM element execution.
+
+### Universal Multilingual Answering Policy Acceptance Criteria
+1. **Native Script Enforcement**: When a query is in a non-English language (e.g., Sinhala), the answer must be delivered in the native script of that language (e.g., Sinhala Unicode script `සිංහල අකුරු`).
+2. **Phonetic Slang Suppression**: If a user submits a question using romanised or transliterated slang (e.g., phonetic Singlish), the model must identify the language and reply strictly in native script, never in Latin/romanised letters.
+3. **Technical Noun Preservation**: Specialised academic terms, symbols, variable names, and named entities (e.g., *Transformer architecture*, *Multi-Head Attention*, *BLEU score*) must be kept in their standard English form.
+4. **Exact English Fallback Invariant**: When retrieved excerpts contain insufficient information, the model must output strictly the exact English fallback string:
+   `"The uploaded paper does not contain information to answer this question."`
+   This fallback string must **never be translated** into any other language, ensuring downstream citation suppression operates consistently across all languages.
+5. **Prompt Contract Architecture**: The policy must be enforced purely through system prompt instructions without any language-specific keyword lists, hardcoded mappings, or if-else language branches in backend code.
+
 ---
 
 ## 5. Architecture & Component Responsibilities
@@ -254,6 +270,14 @@ Two sample papers will be stored in `backend/tests/fixtures/`:
 4. **Multi-turn Chat Support**:
    - Follow-up questions supported within the active session.
    - Sliding window of recent turn history (last 3–5 turns) is forwarded with each prompt to maintain conversational continuity.
+
+5. **KaTeX Math Rendering & Security Boundary**:
+   - Mathematics rendered with KaTeX across summaries and chat dialogs. Delimiters `\(...\)` and `\[...\]` are normalized while keeping code blocks intact.
+   - `rehype-raw` is omitted to eliminate stored XSS risks from user PDFs.
+
+6. **Universal Multilingual Policy**:
+   - Answers in the user's language using native script.
+   - Preserves English technical terminology and enforces the exact English fallback string for all languages without translation.
 
 
 ## 9. Authentication

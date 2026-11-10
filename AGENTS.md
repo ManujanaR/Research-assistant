@@ -30,8 +30,8 @@ Extras are welcome but must not compromise the core. Do not start extras until t
 ├── AGENTS.md
 ├── README.md
 ├── docs/
-│   ├── SPEC.md                # Detailed application specification
-│   └── DESIGN.md              # Architectural & UI design decisions
+│   ├── spec.md                # Detailed application specification
+│   └── design.md              # Architectural & UI design decisions
 ├── backend/
 │   ├── app/
 │   │   ├── main.py            # FastAPI app, router registration, CORS
@@ -124,6 +124,14 @@ Q&A:
 - Answers must be grounded in the uploaded paper. Instruct the model to say when the paper does not contain the answer.
 - Stream responses to the frontend.
 - When RAG is used, return the source chunks or page numbers used for each answer so the UI can show them.
+- Prompt engineering invariants in `backend/app/services/qa.py`:
+  * Conversational banter & casual energy: Match friendly energy, invite the user into the paper, and never trigger robotic refusals for greetings.
+  * Bibliographic & metadata queries: Answer directly from `<DOCUMENT_METADATA>` block (title, authors, venue, publisher, year).
+  * Empirical & document questions: Ground strictly on `<RETRIEVED_CHUNKS>`. Tolerate minor spelling errors if the concept is present in context.
+  * Explicitly out-of-scope queries: Politely refuse general trivia unrelated to research.
+  * Universal Language Policy: Reply in the user's language using its official native script (e.g., Sinhala Unicode script for Sinhala/Singlish), suppress phonetic slang, preserve academic/technical terms in English, and keep the exact English fallback string (`"The uploaded paper does not contain information to answer this question."`) for ungrounded queries across all languages.
+- Current RAG boundary on colloquial/slang queries:
+  * While `query_rewriter.py` expands casual English into academic search terms, heavily transliterated phonetic slang (e.g., Singlish) can present retrieval challenges against English embeddings. Future architectural enhancements should include cross-lingual query normalization and hybrid dense-sparse retrieval.
 
 Credibility and reporting signals:
 - Process credibility in the background without blocking the upload or summary response.
@@ -148,7 +156,12 @@ Credibility and reporting signals:
 ## Testing expectations
 
 - Backend: unit tests for `pdf_parser`, the summary schema validation, and the cache. Mock the LLM client in tests; never make real API calls in the test suite.
-- Frontend: at minimum, a smoke test that the upload page and summary view render with fixture data.
+- Automated fake model testing strategy (`backend/tests/test_natural_chat.py`):
+  * Use deterministic recording fakes (`RecordingChatClient`, `RecordingEmbedder`) to differentiate query rewriting calls from streaming response calls.
+  * Verify system prompt assembly, `<DOCUMENT_METADATA>` injection, sliding-window history truncation (strictly last 3 turns / 6 messages), and prompt contract invariants offline.
+  * Validate that adversarial text inside document excerpts remains contained as passive context and cannot hijack system instructions.
+  * Ensure full coverage of language policy rules, English technical term preservation, and fallback sentence immutability without flaky network calls.
+- Frontend: at minimum, a smoke test that the upload page and summary view render with fixture data. Tests in `components.test.tsx` and `MarkdownRenderer.test.tsx` must verify LaTeX rendering (`\(...\)` and `\[...\]`) and raw HTML sanitization.
 - Include at least two sample research papers in `backend/tests/fixtures/` for manual testing.
 
 ## Definition of done

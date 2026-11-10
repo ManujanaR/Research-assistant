@@ -2,6 +2,13 @@
 
 A full-stack, production-ready research assistant application designed for researchers and engineers. Upload academic papers in PDF format, receive an instant, structured 5-section summary, and converse through an interactive natural-language chat interface grounded in the paper's contents with page-level citations.
 
+[![Specification](https://img.shields.io/badge/Docs-Specification-blue)](docs/spec.md)
+[![Architecture Design](https://img.shields.io/badge/Docs-Architecture%20Design-green)](docs/design.md)
+
+> 📖 **Comprehensive Documentation**:
+> - [**System Specification & Acceptance Criteria**](docs/spec.md): Complete functional specifications, API contracts, RAG grounding constraints, authentication rules, and acceptance criteria.
+> - [**Architecture & UI Design Guide**](docs/design.md): Consolidated design system, component hierarchy, KaTeX math notation architecture, security boundary, universal multilingual policy, and AWS/Docker deployment topologies.
+
 ---
 
 ## Key Features
@@ -14,6 +21,19 @@ A full-stack, production-ready research assistant application designed for resea
   4. *Key Results*
   5. *Conclusion*  
   Includes automatic 1-retry schema validation and persistent disk caching keyed by SHA-256.
+- **KaTeX Mathematical Notation Rendering**:
+  - Full support for inline `\(...\)` (or `$ ... $`) and display block `\[...\]` (or `$$ ... $$`) LaTeX equations.
+  - Rendered across both structured summary cards and conversational chat message bubbles.
+  - Automatic code-block isolation ensures syntax inside backticks (`` ` `` / ```` ``` ````) remains unparsed.
+  - Horizontal scrolling enabled on block formulas (`.katex-display`) to prevent mobile/split-screen layout breakage.
+- **Strict Content Security & HTML Sanitization**:
+  - Model and PDF outputs are treated strictly as untrusted text.
+  - Markdown renderer operates without `rehype-raw`, completely eliminating stored XSS vulnerabilities. Raw HTML tags (e.g., `<script>`, `<img onerror=...>`) render as safe, escaped literal text entities.
+- **Universal Multilingual Q&A Policy**:
+  - **Native Script Enforcement**: Answers in the user's language using its official native script (e.g., Sinhala Unicode script `සිංහල අකුරු` for Sinhala and Singlish queries).
+  - **Phonetic Slang Suppression**: Refuses romanised phonetic slang, translating colloquial intent into grammatically correct native script.
+  - **Technical Term Preservation**: Specialized academic terminology, variables, and named entities (e.g., *Transformer architecture*, *BLEU score*) survive in standard English form.
+  - **Immutable English Fallback Contract**: Ungrounded queries strictly return the English fallback string (`"The uploaded paper does not contain information to answer this question."`) across all languages, ensuring reliable automated citation suppression.
 - **Natural-Language RAG Chat**:
   - **Conversational Query Rewriting**: Resolves pronouns (*"it"*, *"the first one"*, *"they"*) and casual phrasing into standalone academic queries using `gpt-4o-mini` with conversation history before vector search.
   - **Accurate Provenance Citations**: Returns at most 3 top-ranked sources based on cosine distance. Shows page numbers directly from stored PDF metadata with complete-sentence verbatim snippets ($\le 200$ chars).
@@ -145,8 +165,8 @@ sequenceDiagram
 ├── AGENTS.md                  # Development instructions & constraints
 ├── README.md                  # Project documentation
 ├── docs/
-│   ├── SPEC.md                # Detailed application specification
-│   └── DESIGN.md              # Architectural & UI design decisions
+│   ├── spec.md                # Detailed application specification
+│   └── design.md              # Architectural & UI design decisions
 ├── backend/
 │   ├── app/
 │   │   ├── main.py            # FastAPI entry point & CORS configuration
@@ -295,7 +315,7 @@ Run from `backend/`:
 ```bash
 cd backend
 
-# Run full test suite (150+ unit, integration, and smoke tests)
+# Run full test suite (219 tests across unit, integration, and smoke suites)
 pytest -v
 
 # Run linting
@@ -312,7 +332,7 @@ Run from `frontend/`:
 ```bash
 cd frontend
 
-# Run unit and component tests (68 tests)
+# Run unit and component tests (105 tests across Markdown, KaTeX, Auth, and RAG components)
 npm test
 
 # Linting
