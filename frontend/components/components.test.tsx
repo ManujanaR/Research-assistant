@@ -837,6 +837,155 @@ describe("Frontend UI Components", () => {
       expect(clickSpy).toHaveBeenCalledTimes(1);
     });
 
+    describe("Persona Suggestion Chips", () => {
+      it("suggestion chips render only when documentStatus is ready", () => {
+        const { rerender } = render(<ChatPanel docHash="" documentStatus="none" />);
+        expect(screen.queryByTestId("suggestion-chips-bar")).toBeNull();
+        expect(screen.queryByTestId("persona-tablist")).toBeNull();
+        expect(screen.queryByTestId("mobile-centered-chips")).toBeNull();
+        expect(screen.queryByTestId("desktop-suggestion-chips")).toBeNull();
+
+        rerender(<ChatPanel docHash="" documentStatus="indexing" />);
+        expect(screen.queryByTestId("suggestion-chips-bar")).toBeNull();
+        expect(screen.queryByTestId("persona-tablist")).toBeNull();
+        expect(screen.queryByTestId("mobile-centered-chips")).toBeNull();
+        expect(screen.queryByTestId("desktop-suggestion-chips")).toBeNull();
+
+        rerender(<ChatPanel docHash={docHash} documentStatus="ready" />);
+        expect(screen.getByTestId("suggestion-chips-bar")).toBeDefined();
+        expect(screen.getByTestId("persona-tablist")).toBeDefined();
+        expect(screen.getByTestId("desktop-suggestion-chips")).toBeDefined();
+        expect(screen.getByTestId("mobile-centered-chips")).toBeDefined();
+      });
+
+      it("switching tabs updates the active chip set and toggles aria-selected attributes", () => {
+        render(<ChatPanel docHash={docHash} documentStatus="ready" />);
+
+        const readerTab = screen.getByRole("tab", { name: "Reader" });
+        const authorTab = screen.getByRole("tab", { name: "Author" });
+
+        // Default tab is Reader
+        expect(readerTab.getAttribute("aria-selected")).toBe("true");
+        expect(authorTab.getAttribute("aria-selected")).toBe("false");
+
+        // Verify Reader chips are present
+        expect(screen.getByTestId("desktop-chip-reader-core-findings")).toBeDefined();
+        expect(screen.getByTestId("desktop-chip-reader-methodology")).toBeDefined();
+        expect(screen.getByTestId("desktop-chip-reader-dataset-setup")).toBeDefined();
+
+        expect(screen.queryByTestId("desktop-chip-author-flaws-limitations")).toBeNull();
+
+        // Switch to Author tab
+        fireEvent.click(authorTab);
+
+        expect(readerTab.getAttribute("aria-selected")).toBe("false");
+        expect(authorTab.getAttribute("aria-selected")).toBe("true");
+
+        // Verify Author chips are now displayed
+        expect(screen.getByTestId("desktop-chip-author-flaws-limitations")).toBeDefined();
+        expect(screen.getByTestId("desktop-chip-author-gaps-improvements")).toBeDefined();
+        expect(screen.getByTestId("desktop-chip-author-abstract-vs-findings")).toBeDefined();
+
+        expect(screen.queryByTestId("desktop-chip-reader-core-findings")).toBeNull();
+      });
+
+      it("Left and Right arrow keys switch between the tab buttons with focus", () => {
+        render(<ChatPanel docHash={docHash} documentStatus="ready" />);
+
+        const readerTab = screen.getByRole("tab", { name: "Reader" });
+        const authorTab = screen.getByRole("tab", { name: "Author" });
+
+        readerTab.focus();
+        expect(document.activeElement).toBe(readerTab);
+
+        // ArrowRight moves from Reader to Author
+        fireEvent.keyDown(readerTab, { key: "ArrowRight" });
+        expect(authorTab.getAttribute("aria-selected")).toBe("true");
+        expect(readerTab.getAttribute("aria-selected")).toBe("false");
+        expect(document.activeElement).toBe(authorTab);
+
+        // ArrowRight wraps from Author back to Reader
+        fireEvent.keyDown(authorTab, { key: "ArrowRight" });
+        expect(readerTab.getAttribute("aria-selected")).toBe("true");
+        expect(authorTab.getAttribute("aria-selected")).toBe("false");
+        expect(document.activeElement).toBe(readerTab);
+
+        // ArrowLeft moves from Reader to Author
+        fireEvent.keyDown(readerTab, { key: "ArrowLeft" });
+        expect(authorTab.getAttribute("aria-selected")).toBe("true");
+        expect(readerTab.getAttribute("aria-selected")).toBe("false");
+        expect(document.activeElement).toBe(authorTab);
+      });
+
+      it("clicking a chip populates the input with the exact full question text and does not invoke send callback", () => {
+        render(<ChatPanel docHash={docHash} documentStatus="ready" />);
+
+        const textarea = screen.getByPlaceholderText(
+          "Ask any question about this paper..."
+        ) as HTMLTextAreaElement;
+        expect(textarea.value).toBe("");
+
+        // Click desktop Core Findings chip
+        const coreFindingsChip = screen.getByTestId("desktop-chip-reader-core-findings");
+        fireEvent.click(coreFindingsChip);
+
+        expect(textarea.value).toBe(
+          "What are the core findings and main conclusions?"
+        );
+        expect(streamChat).not.toHaveBeenCalled();
+
+        // Click mobile Methodology chip
+        const methodologyMobileChip = screen.getByTestId("mobile-chip-reader-methodology");
+        fireEvent.click(methodologyMobileChip);
+
+        expect(textarea.value).toBe(
+          "Summarize the methodology used in this paper."
+        );
+        expect(streamChat).not.toHaveBeenCalled();
+      });
+
+      it("on mobile with messages > 0, centered chips are hidden, and suggestions button opens mobile panel", () => {
+        render(
+          <ChatPanel
+            docHash={docHash}
+            documentStatus="ready"
+            messages={[
+              { id: "m1", role: "user", content: "What is this paper about?" },
+            ]}
+          />
+        );
+
+        // Centered chips in empty-state must NOT be rendered when messages exist
+        expect(screen.queryByTestId("mobile-centered-chips")).toBeNull();
+
+        // Suggestions toggle button is present
+        const toggleBtn = screen.getByTestId("mobile-suggestions-toggle");
+        expect(toggleBtn).toBeDefined();
+        expect(screen.queryByTestId("mobile-suggestions-panel")).toBeNull();
+
+        // Open suggestions panel
+        fireEvent.click(toggleBtn);
+        const panel = screen.getByTestId("mobile-suggestions-panel");
+        expect(panel).toBeDefined();
+
+        // Click a chip inside the lightweight mobile panel
+        const datasetChip = within(panel).getByText(
+          "What dataset or experimental setup was evaluated?"
+        );
+        fireEvent.click(datasetChip);
+
+        const textarea = screen.getByPlaceholderText(
+          "Ask any question about this paper..."
+        ) as HTMLTextAreaElement;
+        expect(textarea.value).toBe(
+          "What dataset or experimental setup was evaluated?"
+        );
+
+        // Panel should close after selection
+        expect(screen.queryByTestId("mobile-suggestions-panel")).toBeNull();
+      });
+    });
+
     it("scrolls smoothly on message append and instantly on document change", () => {
       const scrollSpy = vi.fn();
       window.HTMLElement.prototype.scrollIntoView = scrollSpy;
@@ -1149,7 +1298,7 @@ describe("Frontend UI Components", () => {
 
       // Mobile tab bar should not be in the desktop workspace container
       const desktopWorkspace = screen.getByTestId("desktop-workspace");
-      expect(within(desktopWorkspace).queryByRole("tablist")).toBeNull();
+      expect(within(desktopWorkspace).queryByRole("tablist", { name: "Workspace tabs" })).toBeNull();
     });
 
     it("mobile tab bar renders three tabs, and selecting Studio shows the summary", async () => {
@@ -1171,7 +1320,7 @@ describe("Frontend UI Components", () => {
       const tabList = screen.getByRole("tablist", { name: "Workspace tabs" });
       expect(tabList).toBeDefined();
 
-      const tabs = screen.getAllByRole("tab");
+      const tabs = within(tabList).getAllByRole("tab");
       expect(tabs).toHaveLength(3);
       expect(tabs[0].textContent).toContain("Source");
       expect(tabs[1].textContent).toContain("Chat");
@@ -1208,7 +1357,8 @@ describe("Frontend UI Components", () => {
         expect(screen.getByTestId("mobile-workspace")).toBeDefined();
       });
 
-      const tabs = screen.getAllByRole("tab");
+      const tabList = screen.getByRole("tablist", { name: "Workspace tabs" });
+      const tabs = within(tabList).getAllByRole("tab");
       // Initial tab is chat (index 1)
       expect(tabs[1].getAttribute("aria-selected")).toBe("true");
 
@@ -1288,7 +1438,8 @@ describe("Frontend UI Components", () => {
       ).toBeDefined();
 
       // Switch to Summary tab (tab index 2)
-      const tabs = screen.getAllByRole("tab");
+      const workspaceTabList = screen.getByRole("tablist", { name: "Workspace tabs" });
+      const tabs = within(workspaceTabList).getAllByRole("tab");
       fireEvent.click(tabs[2]);
 
       // Chat container should now be hidden via className, but remain mounted in DOM
@@ -1375,7 +1526,8 @@ describe("Frontend UI Components", () => {
       });
 
       // Switch views to Summary while stream is in-flight
-      const tabs = screen.getAllByRole("tab");
+      const workspaceTabList = screen.getByRole("tablist", { name: "Workspace tabs" });
+      const tabs = within(workspaceTabList).getAllByRole("tab");
       fireEvent.click(tabs[2]); // Summary tab
       expect(screen.getByTestId("mobile-chat-container").className).toContain("hidden");
 

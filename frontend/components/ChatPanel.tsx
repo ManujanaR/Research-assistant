@@ -24,6 +24,54 @@ export interface MessageWithSources extends ChatMessage {
 
 export type DocumentStatus = "none" | "indexing" | "ready";
 
+export type PersonaMode = "reader" | "author";
+
+export interface SuggestionChip {
+  id: string;
+  label: string;
+  fullText: string;
+}
+
+export const PERSONA_CHIPS: Record<PersonaMode, SuggestionChip[]> = {
+  reader: [
+    {
+      id: "reader-core-findings",
+      label: "Core Findings",
+      fullText: "What are the core findings and main conclusions?",
+    },
+    {
+      id: "reader-methodology",
+      label: "Methodology",
+      fullText: "Summarize the methodology used in this paper.",
+    },
+    {
+      id: "reader-dataset-setup",
+      label: "Dataset / Setup",
+      fullText: "What dataset or experimental setup was evaluated?",
+    },
+  ],
+  author: [
+    {
+      id: "author-flaws-limitations",
+      label: "Flaws & Limitations",
+      fullText:
+        "What explicit limitations, weak points, and threats to validity are acknowledged across the paper?",
+    },
+    {
+      id: "author-gaps-improvements",
+      label: "Gaps & Improvements",
+      fullText:
+        "What specific gaps, unaddressed edge cases, and future improvements are identified in this work?",
+    },
+    {
+      id: "author-abstract-vs-findings",
+      label: "Abstract vs Findings",
+      fullText:
+        "Compare the Abstract with Results and Conclusions: What key findings, metrics, or limitations are missing or undersold in the Abstract?",
+    },
+  ],
+};
+
 export interface ChatPanelProps {
   docHash: string;
   documentStatus?: DocumentStatus;
@@ -71,6 +119,34 @@ export function ChatPanel({
   const [expandedCitationBlocks, setExpandedCitationBlocks] = useState<
     Record<string, boolean>
   >({});
+
+  const [personaMode, setPersonaMode] = useState<PersonaMode>("reader");
+  const [isMobileSuggestionsOpen, setIsMobileSuggestionsOpen] = useState(false);
+
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const readerTabRef = useRef<HTMLButtonElement | null>(null);
+  const authorTabRef = useRef<HTMLButtonElement | null>(null);
+
+  const handlePersonaKeyDown = (
+    e: React.KeyboardEvent<HTMLButtonElement>,
+    current: PersonaMode
+  ) => {
+    if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
+      e.preventDefault();
+      const nextMode: PersonaMode = current === "reader" ? "author" : "reader";
+      setPersonaMode(nextMode);
+      if (nextMode === "reader") {
+        readerTabRef.current?.focus();
+      } else {
+        authorTabRef.current?.focus();
+      }
+    }
+  };
+
+  const handleSelectChip = (fullText: string) => {
+    setInput(fullText);
+    textareaRef.current?.focus();
+  };
 
   const abortControllerRef = useRef<AbortController | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
@@ -408,6 +484,30 @@ export function ChatPanel({
               Answers are grounded strictly in the uploaded document with page
               citations.
             </p>
+
+            {/* Mobile Centered Suggestions (lg:hidden) */}
+            <div
+              data-testid="mobile-centered-chips"
+              className="lg:hidden w-full max-w-sm mt-5 flex flex-col gap-2 text-left"
+            >
+              <p className="text-xs font-semibold text-text-secondary uppercase tracking-wider text-center mb-0.5">
+                {personaMode === "reader" ? "Reader Suggestions" : "Author Suggestions"}
+              </p>
+              {PERSONA_CHIPS[personaMode].map((chip) => (
+                <button
+                  key={chip.id}
+                  type="button"
+                  data-testid={`mobile-chip-${chip.id}`}
+                  onClick={() => handleSelectChip(chip.fullText)}
+                  className="w-full text-left text-xs p-3 rounded-xl bg-surface-elevated hover:bg-surface-pill border border-border-subtle text-text-primary shadow-xs transition-all active:scale-[0.99] focus:outline-none focus-visible:ring-1 focus-visible:ring-accent-blue"
+                >
+                  <span className="font-semibold text-blue-600 dark:text-accent-blue mr-1.5 block sm:inline">
+                    {chip.label}:
+                  </span>
+                  <span>{chip.fullText}</span>
+                </button>
+              ))}
+            </div>
           </div>
         )}
 
@@ -431,6 +531,117 @@ export function ChatPanel({
         <div ref={messagesEndRef} />
       </div>
 
+      {/* Suggestion Chips Bar (Desktop row + Mode Toggle) */}
+      {effectiveStatus === "ready" && (
+        <div
+          data-testid="suggestion-chips-bar"
+          className="flex items-center justify-between gap-2 px-3 sm:px-4 py-1.5 border-t border-border-subtle bg-surface-panel flex-shrink-0 h-10 max-h-12 min-h-[40px] overflow-hidden"
+        >
+          {/* Accessible Mode Toggle (role="tablist") */}
+          <div
+            role="tablist"
+            aria-label="Suggestion persona"
+            data-testid="persona-tablist"
+            className="inline-flex items-center p-0.5 rounded-lg bg-surface-elevated border border-border-subtle flex-shrink-0"
+          >
+            <button
+              ref={readerTabRef}
+              role="tab"
+              id="tab-reader"
+              aria-selected={personaMode === "reader"}
+              aria-controls="chips-reader-panel"
+              tabIndex={personaMode === "reader" ? 0 : -1}
+              onClick={() => setPersonaMode("reader")}
+              onKeyDown={(e) => handlePersonaKeyDown(e, "reader")}
+              className={`px-2.5 py-0.5 rounded-md text-xs font-medium transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-accent-blue ${
+                personaMode === "reader"
+                  ? "bg-surface-panel text-blue-600 dark:text-accent-blue shadow-xs font-semibold"
+                  : "text-text-muted hover:text-text-secondary"
+              }`}
+            >
+              Reader
+            </button>
+            <button
+              ref={authorTabRef}
+              role="tab"
+              id="tab-author"
+              aria-selected={personaMode === "author"}
+              aria-controls="chips-author-panel"
+              tabIndex={personaMode === "author" ? 0 : -1}
+              onClick={() => setPersonaMode("author")}
+              onKeyDown={(e) => handlePersonaKeyDown(e, "author")}
+              className={`px-2.5 py-0.5 rounded-md text-xs font-medium transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-accent-blue ${
+                personaMode === "author"
+                  ? "bg-surface-panel text-blue-600 dark:text-accent-blue shadow-xs font-semibold"
+                  : "text-text-muted hover:text-text-secondary"
+              }`}
+            >
+              Author
+            </button>
+          </div>
+
+          {/* Desktop Single Row of Short Chip Labels */}
+          <div
+            id={personaMode === "reader" ? "chips-reader-panel" : "chips-author-panel"}
+            data-testid="desktop-suggestion-chips"
+            className="hidden lg:flex items-center gap-1.5 flex-1 min-w-0 justify-end"
+          >
+            {PERSONA_CHIPS[personaMode].map((chip) => (
+              <button
+                key={chip.id}
+                type="button"
+                data-testid={`desktop-chip-${chip.id}`}
+                title={chip.fullText}
+                onClick={() => handleSelectChip(chip.fullText)}
+                className="truncate text-xs px-2.5 py-1 rounded-full bg-surface-elevated hover:bg-surface-pill border border-border-subtle text-text-secondary hover:text-text-primary transition-all font-medium focus:outline-none focus-visible:ring-1 focus-visible:ring-accent-blue max-w-[220px]"
+              >
+                {chip.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Mobile Lightweight Suggestions Panel (when opened via Suggestions button) */}
+      {effectiveStatus === "ready" && isMobileSuggestionsOpen && (
+        <div
+          data-testid="mobile-suggestions-panel"
+          className="lg:hidden p-3 border-t border-border-subtle bg-surface-elevated/95 shadow-md flex flex-col gap-2 flex-shrink-0 animate-in fade-in slide-in-from-bottom-2 duration-150"
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-text-secondary">
+              {personaMode === "reader" ? "Reader Suggestions" : "Author Suggestions"}
+            </span>
+            <button
+              type="button"
+              onClick={() => setIsMobileSuggestionsOpen(false)}
+              aria-label="Close suggestions"
+              className="text-xs text-text-muted hover:text-text-primary px-1.5 py-0.5 rounded"
+            >
+              Close
+            </button>
+          </div>
+          <div className="flex flex-col gap-1.5">
+            {PERSONA_CHIPS[personaMode].map((chip) => (
+              <button
+                key={chip.id}
+                type="button"
+                onClick={() => {
+                  handleSelectChip(chip.fullText);
+                  setIsMobileSuggestionsOpen(false);
+                }}
+                className="w-full text-left text-xs p-2.5 rounded-xl bg-surface-panel hover:bg-surface-pill border border-border-subtle text-text-primary transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-accent-blue"
+              >
+                <span className="font-semibold text-blue-600 dark:text-accent-blue mr-1">
+                  {chip.label}:
+                </span>
+                <span>{chip.fullText}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Input area */}
       <form
         onSubmit={handleSubmit}
@@ -438,6 +649,7 @@ export function ChatPanel({
       >
         <div className="relative flex items-end gap-2 w-full">
           <textarea
+            ref={textareaRef}
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => {
@@ -483,6 +695,19 @@ export function ChatPanel({
         </div>
         <div className="flex justify-between items-center mt-2 px-1 text-[11px] text-text-muted min-w-0">
           <div className="flex items-center gap-2 truncate mr-2 min-w-0">
+            {effectiveStatus === "ready" && messages.length > 0 && (
+              <button
+                type="button"
+                data-testid="mobile-suggestions-toggle"
+                onClick={() => setIsMobileSuggestionsOpen((prev) => !prev)}
+                aria-expanded={isMobileSuggestionsOpen}
+                aria-label="Toggle suggestions"
+                className="lg:hidden inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-50 dark:bg-accent-blue/10 text-blue-600 dark:text-accent-blue hover:bg-blue-100 dark:hover:bg-accent-blue/20 font-medium transition-colors border border-blue-200 dark:border-accent-blue/30 flex-shrink-0"
+              >
+                <Sparkles className="w-3 h-3" />
+                <span>Suggestions</span>
+              </button>
+            )}
             {docHash ? (
               <span className="hidden xs:inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-surface-pill border border-border-subtle text-text-secondary font-medium flex-shrink-0">
                 <Sparkles className="w-3 h-3 text-accent-blue" />
