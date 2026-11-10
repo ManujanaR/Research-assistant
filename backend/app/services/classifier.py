@@ -25,11 +25,16 @@ Rules:
 - Query Rewriting:
   * If the intent is "document_question", the "query" field MUST contain a standalone search query (under 20 words) for retrieving relevant passages from the paper. Resolve pronouns (such as "it", "that", "the first one") using the conversation history, and expand casual wording into technical academic terms. Correct spelling mistakes, capitalisation differences, and phonetic variants of technical terms, author names, and framework names. Use the conversation and the paper’s metadata to decide the intended term. Output the corrected term in the search query. Output the search query in the paper’s own spelling of names and terms, regardless of the user’s capitalisation. For a broad or underspecified question, write the search query around how the paper’s scope addresses that topic, such as its findings, measured effects, or context. Do not write a general encyclopaedic definition. If the question has no connection to the paper’s scope, keep the query as close to the question’s own words as possible, and do not add paper-specific terms.
   * If the intent is NOT "document_question", the "query" field MUST be strictly an empty string ("").
+- Cross-Section Comparison:
+  * If the question asks to compare, contrast, or cross-reference two or more distinct sections of the paper (e.g. evaluating the Abstract against Results or Conclusions, or checking if findings match the abstract), set "is_comparative" to true, and list the target section names in "comparison_targets" (e.g. ["abstract", "results"]).
+  * If the question is not a cross-section comparison or if intent is not "document_question", set "is_comparative" to false and "comparison_targets" to [].
 
 Output strictly a JSON object conforming to:
 {
   "intent": "chat" | "document_overview" | "document_question" | "outside_paper",
-  "query": string
+  "query": string,
+  "is_comparative": boolean,
+  "comparison_targets": string[]
 }"""
 
 
@@ -38,6 +43,8 @@ class ClassifierResult(BaseModel):
 
     intent: IntentType = Field(default="document_question")
     query: str = Field(default="")
+    is_comparative: bool = Field(default=False)
+    comparison_targets: list[str] = Field(default_factory=list)
 
 
 async def classify_and_rewrite(
@@ -87,7 +94,7 @@ async def classify_and_rewrite(
             messages=messages,
             response_format={"type": "json_object"},
             temperature=0,
-            max_tokens=60,
+            max_tokens=100,
         )
 
         response = await asyncio.wait_for(coro, timeout=timeout_seconds)
@@ -106,10 +113,25 @@ async def classify_and_rewrite(
                 raw_content = msg_obj.get("content", "") or ""
 
         parsed = json.loads(raw_content)
+        if isinstance(parsed, dict):
+            is_comp = parsed.get("is_comparative")
+            if not isinstance(is_comp, bool):
+                parsed["is_comparative"] = False
+
+            targets = parsed.get("comparison_targets")
+            if isinstance(targets, list):
+                parsed["comparison_targets"] = [
+                    str(t) for t in targets if t and isinstance(t, str)
+                ]
+            else:
+                parsed["comparison_targets"] = []
+
         result = ClassifierResult.model_validate(parsed)
 
         if result.intent != "document_question":
             result.query = ""
+            result.is_comparative = False
+            result.comparison_targets = []
         elif not result.query.strip():
             result.query = message
 
@@ -119,4 +141,9 @@ async def classify_and_rewrite(
             "Chat classifier call failed (%s); defaulting to document_question with raw query.",
             type(exc).__name__,
         )
-        return ClassifierResult(intent="document_question", query=message)
+        return ClassifierResult(
+            intent="document_question",
+            query=message,
+            is_comparative=False,
+            comparison_targets=[],
+        )

@@ -238,3 +238,102 @@ async def test_history_strictly_passes_last_3_turns() -> None:
     assert messages[5]["content"] == "Turn 5 user"
     assert messages[6]["content"] == "Turn 5 assistant"
     assert messages[7]["content"] == "Turn 6 user question"
+
+
+@pytest.mark.asyncio
+async def test_default_values_apply_when_model_omits_fields() -> None:
+    """When the model omits is_comparative and comparison_targets, safe defaults apply."""
+    client = FakeClassifierClient(
+        response_content=json.dumps(
+            {"intent": "document_question", "query": "standard question"}
+        )
+    )
+
+    result = await classify_and_rewrite(
+        message="What is the dataset?",
+        history=[],
+        client=client,
+    )
+
+    assert result.intent == "document_question"
+    assert result.query == "standard question"
+    assert result.is_comparative is False
+    assert result.comparison_targets == []
+
+
+@pytest.mark.asyncio
+async def test_valid_comparative_response_parses_both_fields() -> None:
+    """A valid comparative response parses is_comparative and comparison_targets correctly."""
+    client = FakeClassifierClient(
+        response_content=json.dumps(
+            {
+                "intent": "document_question",
+                "query": "compare abstract against results",
+                "is_comparative": True,
+                "comparison_targets": ["abstract", "results"],
+            }
+        )
+    )
+
+    result = await classify_and_rewrite(
+        message="Does the abstract match the results?",
+        history=[],
+        client=client,
+    )
+
+    assert result.intent == "document_question"
+    assert result.query == "compare abstract against results"
+    assert result.is_comparative is True
+    assert result.comparison_targets == ["abstract", "results"]
+
+
+@pytest.mark.asyncio
+async def test_malformed_comparative_fields_safely_default_without_raising() -> None:
+    """Malformed or wrong-typed comparative fields fall back safely to defaults without raising."""
+    client = FakeClassifierClient(
+        response_content=json.dumps(
+            {
+                "intent": "document_question",
+                "query": "valid query text",
+                "is_comparative": "not_a_bool",
+                "comparison_targets": {"not": "a_list"},
+            }
+        )
+    )
+
+    result = await classify_and_rewrite(
+        message="Compare abstract with findings",
+        history=[],
+        client=client,
+    )
+
+    assert result.intent == "document_question"
+    assert result.query == "valid query text"
+    assert result.is_comparative is False
+    assert result.comparison_targets == []
+
+
+@pytest.mark.asyncio
+async def test_intent_and_query_parse_identically_with_new_fields() -> None:
+    """Non-document_question intents clear query and comparative fields exactly as before."""
+    client = FakeClassifierClient(
+        response_content=json.dumps(
+            {
+                "intent": "chat",
+                "query": "extraneous query",
+                "is_comparative": True,
+                "comparison_targets": ["abstract"],
+            }
+        )
+    )
+
+    result = await classify_and_rewrite(
+        message="Thank you so much!",
+        history=[],
+        client=client,
+    )
+
+    assert result.intent == "chat"
+    assert result.query == ""
+    assert result.is_comparative is False
+    assert result.comparison_targets == []
