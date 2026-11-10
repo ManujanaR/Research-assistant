@@ -11,6 +11,9 @@ export interface UploadZoneProps {
   ocrUsed?: boolean;
   filename?: string | null;
   onReset?: () => void;
+  fileInputRef?: React.RefObject<HTMLInputElement | null>;
+  onIndexingStart?: () => void;
+  onUploadError?: () => void;
 }
 
 const MAX_UPLOAD_MB =
@@ -25,13 +28,23 @@ export function UploadZone({
   ocrUsed: ocrUsedProp,
   filename: propFilename,
   onReset,
+  fileInputRef: externalFileInputRef,
+  onIndexingStart,
+  onUploadError,
 }: UploadZoneProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [ocrUsed, setOcrUsed] = useState(Boolean(ocr_used ?? ocrUsedProp));
   const [localFilename, setLocalFilename] = useState<string | null>(null);
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const internalFileInputRef = useRef<HTMLInputElement | null>(null);
+
+  const setInputRef = (el: HTMLInputElement | null) => {
+    internalFileInputRef.current = el;
+    if (externalFileInputRef) {
+      (externalFileInputRef as React.MutableRefObject<HTMLInputElement | null>).current = el;
+    }
+  };
 
   React.useEffect(() => {
     if (ocr_used !== undefined) {
@@ -75,6 +88,7 @@ export function UploadZone({
     }
 
     setIsLoading(true);
+    onIndexingStart?.();
     try {
       const response = await uploadPdf(file);
       if (response.ocr_used) {
@@ -85,6 +99,7 @@ export function UploadZone({
       setLocalFilename(response.filename || file.name);
       onUploaded(response);
     } catch (err) {
+      onUploadError?.();
       if (err instanceof ApiError) {
         setError(err.detail);
       } else if (err instanceof Error) {
@@ -94,8 +109,8 @@ export function UploadZone({
       }
     } finally {
       setIsLoading(false);
-      if (fileInputRef.current) {
-        fileInputRef.current.value = "";
+      if (internalFileInputRef.current) {
+        internalFileInputRef.current.value = "";
       }
     }
   };
@@ -125,7 +140,7 @@ export function UploadZone({
 
   const handleClick = () => {
     if (!disabled && !isLoading) {
-      fileInputRef.current?.click();
+      internalFileInputRef.current?.click();
     }
   };
 
@@ -133,68 +148,17 @@ export function UploadZone({
     if (disabled || isLoading) return;
     if (e.key === "Enter" || e.key === " ") {
       e.preventDefault();
-      fileInputRef.current?.click();
+      internalFileInputRef.current?.click();
     }
   };
-
-  if (currentFilename) {
-    return (
-      <div className="w-full space-y-3.5">
-        <div
-          data-testid="compact-source-row"
-          className="flex items-center justify-between gap-3 p-3 bg-surface-elevated border border-border-subtle rounded-2xl transition-colors shadow-sm"
-        >
-          <div className="flex items-center gap-2.5 min-w-0 flex-1">
-            <div className="p-2 bg-surface-pill text-blue-600 dark:text-accent-blue rounded-xl flex-shrink-0 border border-border-subtle">
-              <FileText className="w-4 h-4" />
-            </div>
-            <h2
-              title={currentFilename}
-              className="text-xs sm:text-sm font-semibold text-text-primary truncate"
-            >
-              {currentFilename}
-            </h2>
-          </div>
-
-          <button
-            type="button"
-            onClick={handleReset}
-            className="text-xs font-medium text-blue-600 dark:text-accent-blue hover:underline flex-shrink-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded px-1"
-          >
-            Upload another paper
-          </button>
-        </div>
-
-        {ocrUsed && (
-          <div
-            data-testid="ocr-note"
-            className="flex items-start gap-2.5 p-3.5 text-sm text-amber-800 dark:text-amber-200 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/60 rounded-xl"
-          >
-            <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5 text-amber-600 dark:text-amber-400" />
-            <span>This paper was read with OCR. Check the summary against the original.</span>
-          </div>
-        )}
-
-        {error && (
-          <div
-            role="alert"
-            className="flex items-start gap-2.5 p-3.5 text-sm text-red-700 dark:text-red-300 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900/60 rounded-xl"
-          >
-            <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5 text-red-600 dark:text-red-400" />
-            <span>{error}</span>
-          </div>
-        )}
-      </div>
-    );
-  }
 
   return (
     <div className="w-full">
       <input
-        ref={fileInputRef}
+        ref={setInputRef}
         type="file"
         accept=".pdf,application/pdf"
-        className="hidden"
+        className="sr-only"
         disabled={disabled || isLoading}
         onChange={(e) => {
           const files = e.target.files;
@@ -204,65 +168,118 @@ export function UploadZone({
         }}
       />
 
-      <div
-        role="button"
-        tabIndex={disabled || isLoading ? -1 : 0}
-        aria-disabled={disabled || isLoading}
-        onClick={handleClick}
-        onKeyDown={handleKeyDown}
-        onDragOver={handleDragOver}
-        onDragLeave={handleDragLeave}
-        onDrop={handleDrop}
-        className={`relative flex flex-col items-center justify-center p-6 sm:p-8 border-2 border-dashed rounded-2xl transition-all cursor-pointer select-none text-center outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 dark:focus:ring-offset-black ${
-          disabled
-            ? "border-border-subtle bg-bg-base cursor-not-allowed opacity-60 text-text-muted"
-            : isDragging
-            ? "border-accent-blue bg-surface-elevated text-blue-600 dark:text-accent-blue"
-            : "border-border-subtle hover:border-slate-400 dark:hover:border-slate-600 bg-surface-panel hover:bg-surface-elevated text-text-secondary shadow-sm"
-        }`}
-      >
-        {isLoading ? (
-          <div className="flex flex-col items-center gap-3">
-            <Loader2 className="w-10 h-10 animate-spin text-blue-600 dark:text-accent-blue" />
-            <p className="text-sm font-medium text-text-primary">
-              Uploading and analyzing research paper...
-            </p>
-          </div>
-        ) : (
-          <div className="flex flex-col items-center gap-3">
-            <div className="p-3.5 bg-surface-pill text-blue-600 dark:text-accent-blue rounded-full border border-border-subtle">
-              <UploadCloud className="w-8 h-8" />
+      {currentFilename ? (
+        <div className="w-full space-y-3.5">
+          <div
+            data-testid="compact-source-row"
+            className="flex items-center justify-between gap-3 p-3 bg-surface-elevated border border-border-subtle rounded-2xl transition-colors shadow-sm"
+          >
+            <div className="flex items-center gap-2.5 min-w-0 flex-1">
+              <div className="p-2 bg-surface-pill text-blue-600 dark:text-accent-blue rounded-xl flex-shrink-0 border border-border-subtle">
+                <FileText className="w-4 h-4" />
+              </div>
+              <h2
+                title={currentFilename}
+                className="text-xs sm:text-sm font-semibold text-text-primary truncate"
+              >
+                {currentFilename}
+              </h2>
             </div>
-            <div>
-              <p className="text-sm sm:text-base font-semibold text-text-primary">
-                Click to upload or drag and drop
-              </p>
-              <p className="text-xs text-text-secondary mt-1">
-                PDF documents only (up to {MAX_UPLOAD_MB}MB)
-              </p>
-            </div>
+
+            <button
+              type="button"
+              onClick={handleReset}
+              className="text-xs font-medium text-blue-600 dark:text-accent-blue hover:underline flex-shrink-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded px-1"
+            >
+              Upload another paper
+            </button>
           </div>
-        )}
-      </div>
 
-      {ocrUsed && (
-        <div
-          data-testid="ocr-note"
-          className="mt-3.5 flex items-start gap-2.5 p-3.5 text-sm text-amber-800 dark:text-amber-200 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/60 rounded-xl"
-        >
-          <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5 text-amber-600 dark:text-amber-400" />
-          <span>This paper was read with OCR. Check the summary against the original.</span>
-        </div>
-      )}
+          {ocrUsed && (
+            <div
+              data-testid="ocr-note"
+              className="flex items-start gap-2.5 p-3.5 text-sm text-amber-800 dark:text-amber-200 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/60 rounded-xl"
+            >
+              <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5 text-amber-600 dark:text-amber-400" />
+              <span>This paper was read with OCR. Check the summary against the original.</span>
+            </div>
+          )}
 
-      {error && (
-        <div
-          role="alert"
-          className="mt-3.5 flex items-start gap-2.5 p-3.5 text-sm text-red-700 dark:text-red-300 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900/60 rounded-xl"
-        >
-          <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5 text-red-600 dark:text-red-400" />
-          <span>{error}</span>
+          {error && (
+            <div
+              role="alert"
+              className="flex items-start gap-2.5 p-3.5 text-sm text-red-700 dark:text-red-300 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900/60 rounded-xl"
+            >
+              <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5 text-red-600 dark:text-red-400" />
+              <span>{error}</span>
+            </div>
+          )}
         </div>
+      ) : (
+        <>
+          <div
+            role="button"
+            tabIndex={disabled || isLoading ? -1 : 0}
+            aria-disabled={disabled || isLoading}
+            onClick={handleClick}
+            onKeyDown={handleKeyDown}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+            className={`relative flex flex-col items-center justify-center p-6 sm:p-8 border-2 border-dashed rounded-2xl transition-all cursor-pointer select-none text-center outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 dark:focus:ring-offset-black ${
+              disabled
+                ? "border-border-subtle bg-bg-base cursor-not-allowed opacity-60 text-text-muted"
+                : isDragging
+                ? "border-accent-blue bg-surface-elevated text-blue-600 dark:text-accent-blue"
+                : "border-border-subtle hover:border-slate-400 dark:hover:border-slate-600 bg-surface-panel hover:bg-surface-elevated text-text-secondary shadow-sm"
+            }`}
+          >
+            {isLoading ? (
+              <div className="flex flex-col items-center gap-3">
+                <Loader2 className="w-10 h-10 animate-spin text-blue-600 dark:text-accent-blue" />
+                <p className="text-sm font-medium text-text-primary">
+                  Uploading and analyzing research paper...
+                </p>
+              </div>
+            ) : (
+              <div className="flex flex-col items-center gap-3">
+                <div className="p-3.5 bg-surface-pill text-blue-600 dark:text-accent-blue rounded-full border border-border-subtle">
+                  <UploadCloud className="w-8 h-8" />
+                </div>
+                <div>
+                  <p className="text-sm sm:text-base font-semibold text-text-primary">
+                    Click to upload or drag and drop
+                  </p>
+                  <p className="text-xs text-text-secondary mt-1">
+                    PDF documents only (up to {MAX_UPLOAD_MB}MB)
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {ocrUsed && (
+            <div
+              data-testid="ocr-note"
+              className="mt-3.5 flex items-start gap-2.5 p-3.5 text-sm text-amber-800 dark:text-amber-200 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/60 rounded-xl"
+            >
+              <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5 text-amber-600 dark:text-amber-400" />
+              <span>
+                This paper was read with OCR. Check the summary against the original.
+              </span>
+            </div>
+          )}
+
+          {error && (
+            <div
+              role="alert"
+              className="mt-3.5 flex items-start gap-2.5 p-3.5 text-sm text-red-700 dark:text-red-300 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900/60 rounded-xl"
+            >
+              <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5 text-red-600 dark:text-red-400" />
+              <span>{error}</span>
+            </div>
+          )}
+        </>
       )}
     </div>
   );

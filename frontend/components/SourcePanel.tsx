@@ -20,6 +20,9 @@ export interface SourcePanelProps {
   onReset: () => void;
   isReady?: boolean;
   onUploaded?: (result: UploadResponse) => void;
+  fileInputRef?: React.RefObject<HTMLInputElement | null>;
+  onIndexingStart?: () => void;
+  onUploadError?: () => void;
 }
 
 export function SourcePanel({
@@ -30,6 +33,9 @@ export function SourcePanel({
   onReset,
   isReady = true,
   onUploaded,
+  fileInputRef,
+  onIndexingStart,
+  onUploadError,
 }: SourcePanelProps) {
   const hasDocument = Boolean(filename);
 
@@ -61,6 +67,9 @@ export function SourcePanel({
             filename={filename}
             onReset={onReset}
             onUploaded={onUploaded || (() => {})}
+            fileInputRef={fileInputRef}
+            onIndexingStart={onIndexingStart}
+            onUploadError={onUploadError}
           />
 
           {/* Document Stats */}
@@ -108,6 +117,9 @@ export function SourcePanel({
             <UploadZone
               filename={null}
               onUploaded={onUploaded || (() => {})}
+              fileInputRef={fileInputRef}
+              onIndexingStart={onIndexingStart}
+              onUploadError={onUploadError}
             />
           </div>
 

@@ -717,6 +717,116 @@ describe("Frontend UI Components", () => {
       expect(screen.getByTestId("chat-empty-state")).toBeDefined();
     });
 
+    it("the empty state upload card displays when status is none", () => {
+      render(<ChatPanel docHash="" documentStatus="none" />);
+      expect(screen.getByTestId("chat-upload-card")).toBeDefined();
+      expect(
+        screen.getByText(
+          "A research paper must be uploaded before questions can be asked."
+        )
+      ).toBeDefined();
+      expect(
+        screen.getByRole("button", { name: "Upload Research Paper" })
+      ).toBeDefined();
+      expect(screen.queryByTestId("chat-empty-state")).toBeNull();
+    });
+
+    it("the placeholder correctly updates across none, indexing, and ready", () => {
+      const { rerender } = render(<ChatPanel docHash="" documentStatus="none" />);
+      expect(
+        screen.getByPlaceholderText(
+          "Upload a research paper first to ask questions..."
+        )
+      ).toBeDefined();
+
+      rerender(<ChatPanel docHash="" documentStatus="indexing" />);
+      expect(
+        screen.getByPlaceholderText("Indexing paper chunks, please wait...")
+      ).toBeDefined();
+
+      rerender(<ChatPanel docHash={docHash} documentStatus="ready" />);
+      expect(
+        screen.getByPlaceholderText("Ask any question about this paper...")
+      ).toBeDefined();
+    });
+
+    it("the upload button triggers the file input ref", () => {
+      const onUploadClick = vi.fn();
+      render(
+        <ChatPanel
+          docHash=""
+          documentStatus="none"
+          onUploadClick={onUploadClick}
+        />
+      );
+
+      const uploadBtn = screen.getByRole("button", {
+        name: "Upload Research Paper",
+      });
+      expect(uploadBtn).toBeDefined();
+      fireEvent.click(uploadBtn);
+      expect(onUploadClick).toHaveBeenCalledTimes(1);
+    });
+
+    it("the upload button triggers fileInputRef click when provided", () => {
+      const fakeInput = document.createElement("input");
+      fakeInput.type = "file";
+      const clickSpy = vi.spyOn(fakeInput, "click");
+      const ref = { current: fakeInput };
+
+      render(
+        <ChatPanel
+          docHash=""
+          documentStatus="none"
+          fileInputRef={ref as any}
+        />
+      );
+
+      const uploadBtn = screen.getByRole("button", {
+        name: "Upload Research Paper",
+      });
+      fireEvent.click(uploadBtn);
+      expect(clickSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it("scrolls smoothly on message append and instantly on document change", () => {
+      const scrollSpy = vi.fn();
+      window.HTMLElement.prototype.scrollIntoView = scrollSpy;
+
+      const { rerender } = render(
+        <ChatPanel
+          docHash="doc1"
+          documentStatus="ready"
+          messages={[]}
+        />
+      );
+
+      // Appending a new user message triggers smooth scroll
+      rerender(
+        <ChatPanel
+          docHash="doc1"
+          documentStatus="ready"
+          messages={[
+            { id: "1", role: "user", content: "Hello" },
+          ]}
+        />
+      );
+      expect(scrollSpy).toHaveBeenCalledWith({ behavior: "smooth" });
+
+      // Switching docHash triggers instant scroll
+      scrollSpy.mockClear();
+      rerender(
+        <ChatPanel
+          docHash="doc2"
+          documentStatus="ready"
+          messages={[
+            { id: "2", role: "assistant", content: "Welcome to doc2" },
+          ]}
+        />
+      );
+      expect(scrollSpy).toHaveBeenCalledWith({ behavior: "auto" });
+    });
+
     it("a grounded answer shows a collapsed 'Sources (N)' line, and expanding it shows the page and passage", async () => {
       vi.mocked(streamChat).mockImplementation(async (_params, handlers) => {
         handlers.onToken("The core approach ");
@@ -730,7 +840,7 @@ describe("Frontend UI Components", () => {
       render(<ChatPanel docHash={docHash} />);
 
       const textarea = screen.getByPlaceholderText(
-        /ask a question about this paper/i
+        /ask (?:a|any) question about this paper/i
       );
       const sendButton = screen.getByRole("button", { name: /send message/i });
 
@@ -781,7 +891,7 @@ describe("Frontend UI Components", () => {
       render(<ChatPanel docHash={docHash} />);
 
       const textarea = screen.getByPlaceholderText(
-        /ask a question about this paper/i
+        /ask (?:a|any) question about this paper/i
       );
       const sendButton = screen.getByRole("button", { name: /send message/i });
 
@@ -827,7 +937,7 @@ describe("Frontend UI Components", () => {
       render(<ChatPanel docHash={docHash} />);
 
       const textarea = screen.getByPlaceholderText(
-        /ask a question about this paper/i
+        /ask (?:a|any) question about this paper/i
       );
       const sendButton = screen.getByRole("button", { name: /send message/i });
 
@@ -850,7 +960,7 @@ describe("Frontend UI Components", () => {
       render(<ChatPanel docHash={docHash} />);
 
       const textarea = screen.getByPlaceholderText(
-        /ask a question about this paper/i
+        /ask (?:a|any) question about this paper/i
       );
       const sendButton = screen.getByRole("button", { name: /send message/i });
 
@@ -864,7 +974,7 @@ describe("Frontend UI Components", () => {
       render(<ChatPanel docHash={docHash} />);
 
       const textarea = screen.getByPlaceholderText(
-        /ask a question about this paper/i
+        /ask (?:a|any) question about this paper/i
       );
       const sendButton = screen.getByRole("button", { name: /send message/i });
 
@@ -886,7 +996,7 @@ describe("Frontend UI Components", () => {
       render(<ChatPanel docHash={docHash} />);
 
       const textarea = screen.getByPlaceholderText(
-        /ask a question about this paper/i
+        /ask (?:a|any) question about this paper/i
       ) as HTMLTextAreaElement;
       const sendButton = screen.getByRole("button", { name: /send message/i });
 
@@ -922,7 +1032,7 @@ describe("Frontend UI Components", () => {
       render(<ChatPanel docHash={docHash} />);
 
       const textarea = screen.getByPlaceholderText(
-        /ask a question about this paper/i
+        /ask (?:a|any) question about this paper/i
       );
       const sendButton = screen.getByRole("button", { name: /send message/i });
 
@@ -1098,7 +1208,7 @@ describe("Frontend UI Components", () => {
 
       // Send a chat message in the mobile chat panel
       const textarea = within(mobileChatContainer).getByPlaceholderText(
-        /ask a question about this paper/i
+        /ask (?:a|any) question about this paper/i
       );
       const sendButton = within(mobileChatContainer).getByRole("button", {
         name: /send message/i,
@@ -1201,7 +1311,7 @@ describe("Frontend UI Components", () => {
 
       const mobileChatContainer = screen.getByTestId("mobile-chat-container");
       const textarea = within(mobileChatContainer).getByPlaceholderText(
-        /ask a question about this paper/i
+        /ask (?:a|any) question about this paper/i
       );
       const sendButton = within(mobileChatContainer).getByRole("button", {
         name: /send message/i,

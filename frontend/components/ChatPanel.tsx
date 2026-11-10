@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   Send,
   Square,
@@ -11,6 +11,7 @@ import {
   ChevronDown,
   ChevronUp,
   Sparkles,
+  UploadCloud,
 } from "lucide-react";
 import { ChatMessage, ChatSource, streamChat } from "@/lib/api";
 import { SourceCard } from "./SourceCard";
@@ -21,8 +22,13 @@ export interface MessageWithSources extends ChatMessage {
   sources?: ChatSource[];
 }
 
+export type DocumentStatus = "none" | "indexing" | "ready";
+
 export interface ChatPanelProps {
   docHash: string;
+  documentStatus?: DocumentStatus;
+  onUploadClick?: () => void;
+  fileInputRef?: React.RefObject<HTMLInputElement | null>;
   messages?: MessageWithSources[];
   onMessagesChange?: (
     updater:
@@ -33,9 +39,15 @@ export interface ChatPanelProps {
 
 export function ChatPanel({
   docHash,
+  documentStatus: documentStatusProp,
+  onUploadClick,
+  fileInputRef,
   messages: controlledMessages,
   onMessagesChange,
 }: ChatPanelProps) {
+  const effectiveStatus: DocumentStatus =
+    documentStatusProp ?? (docHash ? "ready" : "none");
+
   const [internalMessages, setInternalMessages] = useState<MessageWithSources[]>([]);
   const messages =
     controlledMessages !== undefined ? controlledMessages : internalMessages;
@@ -62,10 +74,57 @@ export function ChatPanel({
 
   const abortControllerRef = useRef<AbortController | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const prevMessagesLengthRef = useRef(messages.length);
+  const prevDocHashRef = useRef(docHash);
+  const isInitialMountRef = useRef(true);
 
-  const scrollToBottom = () => {
-    if (typeof messagesEndRef.current?.scrollIntoView === "function") {
-      messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
+  // Auto-scroll handler: instant for initial load and document changes, smooth only when new message appended
+  useEffect(() => {
+    if (isInitialMountRef.current) {
+      isInitialMountRef.current = false;
+      prevMessagesLengthRef.current = messages.length;
+      prevDocHashRef.current = docHash;
+      if (messages.length > 0 && typeof messagesEndRef.current?.scrollIntoView === "function") {
+        messagesEndRef.current.scrollIntoView({ behavior: "auto" });
+      }
+      return;
+    }
+
+    // Document switch: instant scroll
+    if (prevDocHashRef.current !== docHash) {
+      prevDocHashRef.current = docHash;
+      prevMessagesLengthRef.current = messages.length;
+      if (messages.length > 0 && typeof messagesEndRef.current?.scrollIntoView === "function") {
+        messagesEndRef.current.scrollIntoView({ behavior: "auto" });
+      }
+      return;
+    }
+
+    // Smooth scroll only when a new message is appended (length increases), checking the last message's role
+    if (messages.length > prevMessagesLengthRef.current) {
+      const lastMessage = messages[messages.length - 1];
+      if (
+        lastMessage &&
+        (lastMessage.role === "assistant" || lastMessage.role === "user") &&
+        typeof messagesEndRef.current?.scrollIntoView === "function"
+      ) {
+        messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
+      }
+    }
+
+    prevMessagesLengthRef.current = messages.length;
+  }, [messages, docHash]);
+
+  const handleUploadClick = () => {
+    if (onUploadClick) {
+      onUploadClick();
+    } else if (fileInputRef?.current) {
+      fileInputRef.current.click();
+    } else {
+      const input = document.querySelector(
+        'input[type="file"]'
+      ) as HTMLInputElement | null;
+      input?.click();
     }
   };
 
@@ -86,7 +145,7 @@ export function ChatPanel({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (isStreaming || !docHash) return;
+    if (isStreaming || effectiveStatus !== "ready" || !docHash) return;
 
     const trimmed = input.trim();
     if (!trimmed) return;
@@ -142,7 +201,6 @@ export function ChatPanel({
                   : msg
               )
             );
-            scrollToBottom();
           },
           onSources: (sources) => {
             setMessages((prev) =>
@@ -154,7 +212,6 @@ export function ChatPanel({
           onDone: () => {
             setIsStreaming(false);
             abortControllerRef.current = null;
-            scrollToBottom();
           },
           onError: (errDetail) => {
             setIsStreaming(false);
@@ -198,24 +255,7 @@ export function ChatPanel({
 
       {/* Message List */}
       <div className="flex-1 p-3.5 sm:p-5 overflow-y-auto space-y-4 min-h-0 bg-bg-base/40">
-        {messages.length === 0 ? (
-          <div
-            data-testid="chat-empty-state"
-            className="flex flex-col items-center justify-center h-full text-center text-text-muted p-6 sm:p-8"
-          >
-            <div className="text-4xl mb-3">👋</div>
-            <h3 className="text-lg font-semibold text-text-primary mb-1">
-              Let&apos;s start your Research...
-            </h3>
-            <p className="text-sm font-medium text-text-secondary">
-              Ask a question about the paper.
-            </p>
-            <p className="text-xs text-text-muted mt-1 max-w-xs">
-              Answers are grounded strictly in the uploaded document with page
-              citations.
-            </p>
-          </div>
-        ) : (
+        {messages.length > 0 ? (
           messages.map((msg) => {
             const hasSources =
               msg.role === "assistant" &&
@@ -295,6 +335,63 @@ export function ChatPanel({
               </div>
             );
           })
+        ) : effectiveStatus === "none" ? (
+          <div
+            data-testid="chat-upload-card"
+            className="flex flex-col items-center justify-center h-full text-center p-6 sm:p-8"
+          >
+            <div className="max-w-sm w-full bg-surface-elevated border border-border-subtle rounded-2xl p-6 sm:p-8 shadow-sm flex flex-col items-center text-center">
+              <div className="w-12 h-12 rounded-2xl bg-blue-50 dark:bg-accent-blue/10 text-blue-600 dark:text-accent-blue flex items-center justify-center mb-4 border border-blue-100 dark:border-accent-blue/20">
+                <UploadCloud className="w-6 h-6" />
+              </div>
+              <h3 className="text-base sm:text-lg font-semibold text-text-primary mb-2">
+                Upload a Research Paper
+              </h3>
+              <p className="text-sm text-text-secondary mb-6 leading-relaxed">
+                A research paper must be uploaded before questions can be asked.
+              </p>
+              <button
+                type="button"
+                onClick={handleUploadClick}
+                aria-label="Upload Research Paper"
+                data-testid="upload-research-paper-button"
+                className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white dark:bg-accent-blue dark:hover:bg-blue-400 dark:text-black font-semibold text-sm transition-all focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:focus:ring-offset-black shadow-sm active:scale-95"
+              >
+                <UploadCloud className="w-4 h-4" />
+                Upload Research Paper
+              </button>
+            </div>
+          </div>
+        ) : effectiveStatus === "indexing" ? (
+          <div
+            data-testid="chat-indexing-state"
+            className="flex flex-col items-center justify-center h-full text-center text-text-muted p-6 sm:p-8"
+          >
+            <Loader2 className="w-8 h-8 animate-spin text-blue-600 dark:text-accent-blue mb-3" />
+            <h3 className="text-base font-semibold text-text-primary mb-1">
+              Indexing paper chunks...
+            </h3>
+            <p className="text-sm font-medium text-text-secondary">
+              Please wait while the document is indexed.
+            </p>
+          </div>
+        ) : (
+          <div
+            data-testid="chat-empty-state"
+            className="flex flex-col items-center justify-center h-full text-center text-text-muted p-6 sm:p-8"
+          >
+            <div className="text-4xl mb-3">👋</div>
+            <h3 className="text-lg font-semibold text-text-primary mb-1">
+              Let&apos;s start your Research...
+            </h3>
+            <p className="text-sm font-medium text-text-secondary">
+              Ask a question about the paper.
+            </p>
+            <p className="text-xs text-text-muted mt-1 max-w-xs">
+              Answers are grounded strictly in the uploaded document with page
+              citations.
+            </p>
+          </div>
         )}
 
         {/* In-list Error state */}
@@ -335,14 +432,16 @@ export function ChatPanel({
             placeholder={
               isStreaming
                 ? "Waiting for response..."
-                : !docHash
-                ? "Upload a paper to start asking questions..."
-                : "Ask a question about this paper (Enter to send, Shift+Enter for new line)..."
+                : effectiveStatus === "none"
+                ? "Upload a research paper first to ask questions..."
+                : effectiveStatus === "indexing"
+                ? "Indexing paper chunks, please wait..."
+                : "Ask any question about this paper..."
             }
-            disabled={isStreaming || !docHash}
+            disabled={isStreaming || effectiveStatus !== "ready"}
             maxLength={2000}
             rows={2}
-            className="flex-1 min-w-0 resize-none rounded-2xl border border-border-subtle p-2.5 sm:p-3 text-base sm:text-sm focus:border-accent-blue focus:outline-none focus:ring-1 focus:ring-accent-blue disabled:bg-surface-elevated disabled:text-text-muted placeholder:text-text-muted bg-surface-panel text-text-primary shadow-sm"
+            className="flex-1 min-w-0 resize-none rounded-2xl border border-border-subtle p-2.5 sm:p-3 text-base sm:text-sm focus:border-accent-blue focus:outline-none focus:ring-1 focus:ring-accent-blue disabled:bg-surface-elevated disabled:text-slate-600 dark:disabled:text-slate-300 placeholder:text-slate-500 dark:placeholder:text-slate-400 bg-surface-panel text-text-primary shadow-sm"
           />
 
           {isStreaming ? (
@@ -357,7 +456,7 @@ export function ChatPanel({
           ) : (
             <button
               type="submit"
-              disabled={isStreaming || !docHash || !input.trim()}
+              disabled={isStreaming || effectiveStatus !== "ready" || !input.trim()}
               aria-label="Send message"
               className="p-3 bg-blue-600 hover:bg-blue-700 dark:bg-accent-blue dark:hover:bg-blue-400 dark:text-black disabled:opacity-50 disabled:hover:bg-blue-600 dark:disabled:hover:bg-accent-blue text-white rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 flex items-center justify-center flex-shrink-0 min-h-[44px] min-w-[44px] shadow-sm"
             >

@@ -6,7 +6,7 @@ import { AuthPanel } from "@/components/AuthPanel";
 import { ProfileMenu } from "@/components/ProfileMenu";
 import { SourcePanel } from "@/components/SourcePanel";
 import { StudioPanel } from "@/components/StudioPanel";
-import { ChatPanel, MessageWithSources } from "@/components/ChatPanel";
+import { ChatPanel, MessageWithSources, DocumentStatus } from "@/components/ChatPanel";
 import { ExportButton } from "@/components/ExportButton";
 import { ViewPdfButton } from "@/components/ViewPdfButton";
 import { PdfViewerDrawer } from "@/components/PdfViewerDrawer";
@@ -45,6 +45,26 @@ export default function Home() {
   const [summary, setSummary] = useState<SummaryResponse | null>(null);
   const [isSummaryLoading, setIsSummaryLoading] = useState(false);
   const [summaryError, setSummaryError] = useState<string | null>(null);
+  const [isIndexing, setIsIndexing] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  const documentStatus: DocumentStatus = isIndexing
+    ? "indexing"
+    : uploadResult?.doc_hash
+    ? "ready"
+    : "none";
+
+  const handleTriggerUpload = () => {
+    if (fileInputRef.current) {
+      fileInputRef.current.click();
+    } else {
+      const input = document.querySelector(
+        'input[type="file"]'
+      ) as HTMLInputElement | null;
+      input?.click();
+    }
+  };
+
   // Lift chat messages state keyed by active document ID for the session (in-memory React state)
   const [chatMessagesByDoc, setChatMessagesByDoc] = useState<
     Record<string, MessageWithSources[]>
@@ -184,6 +204,7 @@ export default function Home() {
   }, []);
 
   const handleUploaded = async (result: UploadResponse) => {
+    setIsIndexing(false);
     // Switching documents clears previous document's messages
     if (uploadResult?.doc_hash && uploadResult.doc_hash !== result.doc_hash) {
       setChatMessagesByDoc((prev) => {
@@ -214,6 +235,7 @@ export default function Home() {
   };
 
   const handleReset = () => {
+    setIsIndexing(false);
     if (currentBlobUrlRef.current) {
       URL.revokeObjectURL(currentBlobUrlRef.current);
       currentBlobUrlRef.current = null;
@@ -356,6 +378,9 @@ export default function Home() {
             onReset={handleReset}
             isReady={Boolean(summary && !isSummaryLoading)}
             onUploaded={handleUploaded}
+            fileInputRef={fileInputRef}
+            onIndexingStart={() => setIsIndexing(true)}
+            onUploadError={() => setIsIndexing(false)}
           />
         </aside>
 
@@ -366,6 +391,9 @@ export default function Home() {
         >
           <ChatPanel
             docHash={uploadResult?.doc_hash ?? ""}
+            documentStatus={documentStatus}
+            onUploadClick={handleTriggerUpload}
+            fileInputRef={fileInputRef}
             messages={currentChatMessages}
             onMessagesChange={handleChatMessagesChange}
           />
@@ -403,6 +431,9 @@ export default function Home() {
               onReset={handleReset}
               isReady={Boolean(summary && !isSummaryLoading)}
               onUploaded={handleUploaded}
+              fileInputRef={fileInputRef}
+              onIndexingStart={() => setIsIndexing(true)}
+              onUploadError={() => setIsIndexing(false)}
             />
           </div>
           <div
@@ -411,6 +442,9 @@ export default function Home() {
           >
             <ChatPanel
               docHash={uploadResult?.doc_hash ?? ""}
+              documentStatus={documentStatus}
+              onUploadClick={handleTriggerUpload}
+              fileInputRef={fileInputRef}
               messages={currentChatMessages}
               onMessagesChange={handleChatMessagesChange}
             />
