@@ -67,7 +67,7 @@ export const PERSONA_CHIPS: Record<PersonaMode, SuggestionChip[]> = {
       id: "author-abstract-vs-findings",
       label: "Abstract vs Findings",
       fullText:
-        "Compare the Abstract with Results and Conclusions: What key findings, metrics, or limitations are missing or undersold in the Abstract?",
+        "Does the abstract accurately summarize all the main results and findings reported in the paper?",
     },
   ],
 };
