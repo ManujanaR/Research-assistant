@@ -780,6 +780,89 @@ async def retrieve(
     return retrieved
 
 
+DEFAULT_SECTION_QUERIES: dict[str, str] = {
+    "abstract": "Abstract study background objectives summary",
+    "results": "Results main findings observed prevalence metrics reduction",
+    "findings": "Results main findings observed prevalence metrics reduction",
+    "conclusion": "Conclusion summary implications recommendations future work",
+    "conclusions": "Conclusion summary implications recommendations future work",
+    "methodology": "Methodology study design methods procedures materials",
+    "methods": "Methodology study design methods procedures materials",
+    "discussion": "Discussion interpretation limitations implications",
+}
+
+
+def _resolve_section_query(target: str) -> str:
+    """Map a comparison target section to its structural search query."""
+    normalized = target.lower().strip()
+    if "abstract" in normalized:
+        return DEFAULT_SECTION_QUERIES["abstract"]
+    if "result" in normalized or "finding" in normalized:
+        return DEFAULT_SECTION_QUERIES["results"]
+    if "conclusion" in normalized:
+        return DEFAULT_SECTION_QUERIES["conclusion"]
+    if "method" in normalized:
+        return DEFAULT_SECTION_QUERIES["methodology"]
+    if "discussion" in normalized:
+        return DEFAULT_SECTION_QUERIES["discussion"]
+    return DEFAULT_SECTION_QUERIES.get(normalized, f"{target} section findings details")
+
+
+async def retrieve_multi_section(
+    doc_hash: str,
+    embed_fn: EmbedFn,
+    comparison_targets: list[str] | None = None,
+    client: ClientAPI | None = None,
+    target_top_k: int = 3,
+) -> list[RetrievedChunk]:
+    """Execute dual targeted retrieval for cross-section comparative inquiries.
+
+    Runs Pass 1 for Abstract and Pass 2 for Results/Secondary target section.
+    Merges both sets, deduplicates strictly by chunk ID, and sorts by distance.
+    If a section yields no matching chunks, no arbitrary text is substituted.
+    """
+    targets = [t for t in (comparison_targets or []) if t and str(t).strip()]
+    if not targets:
+        targets = ["abstract", "results"]
+    elif len(targets) == 1:
+        if "abstract" in targets[0].lower():
+            targets.append("results")
+        else:
+            targets.append("abstract")
+
+    target1 = targets[0]
+    target2 = targets[1]
+
+    query1 = _resolve_section_query(target1)
+    query2 = _resolve_section_query(target2)
+
+    pass1_chunks = await retrieve(
+        doc_hash=doc_hash,
+        query=query1,
+        embed_fn=embed_fn,
+        top_k=target_top_k,
+        client=client,
+    )
+    pass2_chunks = await retrieve(
+        doc_hash=doc_hash,
+        query=query2,
+        embed_fn=embed_fn,
+        top_k=target_top_k,
+        client=client,
+    )
+
+    seen_ids: set[str] = set()
+    merged: list[RetrievedChunk] = []
+
+    for chunk in pass1_chunks + pass2_chunks:
+        if chunk.id not in seen_ids:
+            seen_ids.add(chunk.id)
+            merged.append(chunk)
+
+    merged.sort(key=lambda c: c.distance)
+    return merged
+
+
 CHAT_SYSTEM_PROMPT = CHAT_SYSTEM_PROMPT_TEMPLATE
 
 OVERVIEW_SYSTEM_PROMPT = """You are a helpful research assistant providing an overview of an academic paper.

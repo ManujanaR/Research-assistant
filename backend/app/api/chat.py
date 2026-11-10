@@ -31,6 +31,7 @@ from app.services.qa import (
     get_title_authors_abstract,
     rebuild_text_from_chroma,
     retrieve,
+    retrieve_multi_section,
     stream_chat_response,
 )
 
@@ -182,13 +183,22 @@ async def chat(
     search_query = classification.query.strip() or request.message
 
     try:
-        chunks = await retrieve(
-            doc_hash=request.doc_hash,
-            query=search_query,
-            embed_fn=embed_fn,
-            top_k=5,
-            client=chroma_client,
-        )
+        if classification.is_comparative:
+            chunks = await retrieve_multi_section(
+                doc_hash=request.doc_hash,
+                embed_fn=embed_fn,
+                comparison_targets=classification.comparison_targets,
+                client=chroma_client,
+                target_top_k=3,
+            )
+        else:
+            chunks = await retrieve(
+                doc_hash=request.doc_hash,
+                query=search_query,
+                embed_fn=embed_fn,
+                top_k=5,
+                client=chroma_client,
+            )
     except EmbeddingDimensionMismatchError as exc:
         raise HTTPException(
             status_code=409,
@@ -235,9 +245,12 @@ async def chat(
     relevant_chunks = [
         c for c in chunks if c.distance <= settings.citation_max_distance
     ]
-    sorted_relevant = sorted(relevant_chunks, key=lambda c: c.distance)[:3]
+    max_relevant = 6 if classification.is_comparative else 3
+    sorted_relevant = sorted(relevant_chunks, key=lambda c: c.distance)[:max_relevant]
 
-    sources = extract_sources(sorted_relevant, question=request.message, max_sources=3)
+    sources = extract_sources(
+        sorted_relevant, question=request.message, max_sources=max_relevant
+    )
     messages = assemble_chat_messages(
         question=request.message,
         history=request.history,
