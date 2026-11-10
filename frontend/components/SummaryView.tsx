@@ -9,6 +9,7 @@ import {
   Check,
 } from "lucide-react";
 import { SummaryResponse } from "@/lib/api";
+import { MarkdownRenderer } from "./MarkdownRenderer";
 
 export interface SummaryViewProps {
   summary: SummaryResponse | null;
@@ -209,7 +210,7 @@ export function SummaryView({ summary, isLoading, error }: SummaryViewProps) {
               <div
                 id={`section-body-${section.key}`}
                 data-testid={`section-content-${section.key}`}
-                className="px-4 pb-4 pt-2 text-xs sm:text-sm leading-relaxed text-text-secondary whitespace-pre-wrap font-normal border-t border-border-subtle"
+                className="px-4 pb-4 pt-2 text-xs sm:text-sm leading-relaxed text-text-secondary font-normal border-t border-border-subtle"
               >
                 {section.key === "header" ? (
                   summary.header ? (
@@ -218,7 +219,7 @@ export function SummaryView({ summary, isLoading, error }: SummaryViewProps) {
                         data-testid="header-title"
                         className="text-sm sm:text-base font-semibold text-text-primary leading-snug"
                       >
-                        {summary.header.title}
+                        <MarkdownRenderer content={summary.header.title} inline />
                       </h4>
                       <p
                         data-testid="header-authors"
@@ -226,18 +227,22 @@ export function SummaryView({ summary, isLoading, error }: SummaryViewProps) {
                       >
                         {summary.header.authors}
                       </p>
-                      <p
+                      <div
                         data-testid="header-abstract"
-                        className="text-xs sm:text-sm text-text-secondary leading-relaxed whitespace-pre-wrap pt-1"
+                        className="text-xs sm:text-sm text-text-secondary leading-relaxed pt-1"
                       >
-                        {summary.header.abstract}
-                      </p>
+                        <MarkdownRenderer content={summary.header.abstract} />
+                      </div>
                     </div>
                   ) : (
-                    <div>{summary.title_authors_abstract}</div>
+                    <div>
+                      <MarkdownRenderer content={summary.title_authors_abstract || ""} />
+                    </div>
                   )
                 ) : (
-                  <div>{summary[section.key]}</div>
+                  <div>
+                    <MarkdownRenderer content={summary[section.key]} />
+                  </div>
                 )}
               </div>
             )}
