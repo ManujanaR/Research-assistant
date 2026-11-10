@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { ChatMessage, ChatSource, streamChat } from "@/lib/api";
 import { SourceCard } from "./SourceCard";
+import { MarkdownRenderer } from "./MarkdownRenderer";
 
 export interface MessageWithSources extends ChatMessage {
   id: string;
@@ -243,11 +244,14 @@ export function ChatPanel({
                   {msg.role === "user" && (
                     <User className="w-4 h-4 text-blue-200 mt-0.5 flex-shrink-0" />
                   )}
-                  <div className="text-sm whitespace-pre-wrap leading-relaxed inline">
-                    <span>
-                      {msg.content ||
-                        (isStreaming && msg.role === "assistant" ? "..." : "")}
-                    </span>
+                  <div className="text-sm leading-relaxed min-w-0 flex-1">
+                    {msg.content ? (
+                      <MarkdownRenderer content={msg.content} />
+                    ) : (
+                      <span>
+                        {isStreaming && msg.role === "assistant" ? "..." : ""}
+                      </span>
+                    )}
                   </div>
                 </div>
 

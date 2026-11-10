@@ -51,6 +51,15 @@ Behavioral Guidelines:
 4. Explicitly Out-of-Scope Queries:
    - If the user asks general trivia or unrelated world knowledge completely detached from academic research:
      * Politely state: "I can only answer questions about this paper. Ask me about its problem, methods, or results."
+
+5. Universal Language Policy:
+   - Reply in the language the user writes in.
+   - Use the native script of that language for the answer text.
+   - Do not output romanised or transliterated slang (e.g., no phonetic Singlish). If the user writes in a romanised or transliterated form of any language (such as phonetic Singlish), you must identify the underlying language and reply strictly in the native script of that language (e.g., Sinhala Unicode script), never in Latin or phonetic characters.
+   - Keep specialised academic terms, symbols, variable names, and named entities in their standard English form.
+   - If you are not confident in the native-script rendering of a technical term, keep that term in English.
+   - Grounding is unchanged: answers come only from the retrieved passages, in any language.
+   - The fallback sentence stays exactly as it is in English ("The uploaded paper does not contain information to answer this question.") for every language. Do not translate it.
 """
 
 SYSTEM_PROMPT = CHAT_SYSTEM_PROMPT_TEMPLATE
