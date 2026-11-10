@@ -1,4 +1,5 @@
 import logging
+import re
 from typing import Annotated, Any
 
 import openai
@@ -184,12 +185,37 @@ async def chat(
 
     try:
         if classification.is_comparative:
+            targets = [
+                str(t).strip()
+                for t in (classification.comparison_targets or [])
+                if t and str(t).strip()
+            ]
+            if not targets:
+                query_source = (classification.query or "").strip() or request.message
+                parts = re.split(
+                    r"\s+(?:and|vs\.?)\s+|,\s*", query_source, flags=re.IGNORECASE
+                )
+                cleaned = [
+                    re.sub(
+                        r"^(?:compare|contrast|evaluate|check)\s+(?:the\s+)?",
+                        "",
+                        p.strip(),
+                        flags=re.IGNORECASE,
+                    ).strip()
+                    for p in parts
+                    if p.strip()
+                ]
+                targets = [
+                    re.sub(r"^the\s+", "", c, flags=re.IGNORECASE).strip()
+                    for c in cleaned
+                    if c
+                ]
             chunks = await retrieve_multi_section(
                 doc_hash=request.doc_hash,
+                targets=targets,
                 embed_fn=embed_fn,
-                comparison_targets=classification.comparison_targets,
                 client=chroma_client,
-                target_top_k=3,
+                top_k=3,
             )
         else:
             chunks = await retrieve(
